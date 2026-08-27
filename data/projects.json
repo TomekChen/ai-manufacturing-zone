@@ -1,0 +1,32 @@
+[
+  {
+    "id": "ddae6c975a1174b2",
+    "name": "视界视频生成",
+    "role": "多模态视频生成平台",
+    "desc": "支持本地 41GB 模型与云 API 的视频生成工作台，集成阿里云百炼 MaaS 自定义模型。",
+    "url": "http://219.133.7.139:31180",
+    "image": "",
+    "caps": [
+      "文生视频",
+      "图生视频",
+      "模型自定义",
+      "百炼 API 接入"
+    ],
+    "color": "purple",
+    "alive": false,
+    "last_check": "2026-08-27T13:36:38.050194"
+  },
+  {
+    "id": "b8acd9e402048983",
+    "name": "pascal editor",
+    "role": "高性能 3D 建筑编辑器",
+    "desc": "Pascal Editor 是一款基于 WebGPU 的高性能 3D 建筑编辑器，支持可视化场景搭建、 节点化建模与 AI 智能体集成。已部署至智星云，点击下方按钮即可进入。",
+    "url": "http://180.127.11.169:21882/",
+    "image": "/uploads/b302f8d9f3f5634c.png",
+    "caps": [],
+    "color": "blue",
+    "alive": true,
+    "last_check": "2026-08-27T13:36:38.070226",
+    "heartbeatUrl": "http://127.0.0.1:8800/"
+  }
+]

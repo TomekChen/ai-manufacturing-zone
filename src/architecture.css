@@ -1,0 +1,634 @@
+/* ===== 智能制造架构图样式 ===== */
+
+/* --- Section 容器 --- */
+.arch-section {
+  position: relative;
+  background: linear-gradient(180deg, #06080d 0%, #0b0f1a 40%, #0d1117 100%);
+  padding: 48px 0 56px;
+  overflow: hidden;
+}
+.arch-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.arch-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* --- 主标题 --- */
+.arch-main-title {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.arch-title-tag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--cyan, #22d3ee);
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+}
+.arch-title-tag-line {
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan, #22d3ee), transparent);
+}
+.arch-title-text {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ink-strong, #fff);
+  line-height: 1.3;
+  margin-bottom: 10px;
+}
+.arch-title-gradient {
+  background: linear-gradient(135deg, #06b6d4, #3b82f6, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.arch-title-desc {
+  font-size: 14px;
+  color: var(--muted, #8888a0);
+  letter-spacing: 1px;
+}
+
+/* --- 架构图主体 --- */
+.arch-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* --- 层间连接器 --- */
+.arch-connector {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  opacity: 0.5;
+}
+
+/* --- 通用层标签 --- */
+.arch-layer-label {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted, #8888a0);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.arch-layer-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(6, 182, 212, 0.12);
+  color: var(--cyan, #22d3ee);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+/* ===== 第一层：企业顶层 ===== */
+.arch-enterprise-layer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.arch-enterprise-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 40px;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(59, 130, 246, 0.08));
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 12px;
+  max-width: 600px;
+  width: 100%;
+}
+.arch-enterprise-icon {
+  color: var(--cyan, #22d3ee);
+  flex-shrink: 0;
+}
+.arch-enterprise-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink-strong, #fff);
+  margin-bottom: 2px;
+}
+.arch-enterprise-sub {
+  font-size: 13px;
+  color: var(--muted, #8888a0);
+}
+
+/* ===== 第一层：部门-场景 ===== */
+.arch-dept-layer {
+  width: 100%;
+}
+.arch-dept-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+.arch-dept-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.arch-dept-header {
+  text-align: center;
+  padding: 10px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-strong, #fff);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.arch-dept-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.arch-scenario-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.arch-scenario-box {
+  display: block;
+  width: 100%;
+  padding: 9px 8px;
+  font-size: 13px;
+  color: var(--body, #c8c8d0);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: center;
+  font-family: inherit;
+  line-height: 1.3;
+}
+.arch-scenario-box:hover {
+  background: rgba(var(--dept-color, 59, 130, 246), 0.1);
+  border-color: var(--dept-color, #3b82f6);
+  color: var(--ink-strong, #fff);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--dept-color, 59, 130, 246), 0.15);
+}
+.arch-scenario-box:active {
+  transform: translateY(0);
+}
+
+/* ===== 第二层：智能体集群 ===== */
+.arch-agent-layer {
+  width: 100%;
+}
+.arch-agent-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.arch-agent-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, rgba(var(--agent-color, 59, 130, 246), 0.1), rgba(var(--agent-color, 59, 130, 246), 0.05));
+  border: 1px solid rgba(var(--agent-color, 59, 130, 246), 0.3);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink, #f0f0f4);
+}
+.arch-agent-chip:hover {
+  background: linear-gradient(135deg, rgba(var(--agent-color, 59, 130, 246), 0.2), rgba(var(--agent-color, 59, 130, 246), 0.1));
+  border-color: var(--agent-color, #3b82f6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(var(--agent-color, 59, 130, 246), 0.2);
+}
+.arch-agent-chip-emoji {
+  font-size: 16px;
+}
+.arch-agent-chip-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ===== 第三层：协同调度中枢 ===== */
+.arch-coord-layer {
+  width: 100%;
+}
+.arch-coord-box {
+  padding: 20px 24px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.06), rgba(59, 130, 246, 0.06));
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: 12px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.arch-coord-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.arch-coord-item {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--body, #c8c8d0);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  white-space: nowrap;
+}
+
+/* ===== 第四层：能力中台 ===== */
+.arch-platform-layer {
+  width: 100%;
+}
+.arch-platform-box {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.arch-cap-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.arch-cap-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--body, #c8c8d0);
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+.arch-cap-item:hover {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.3);
+}
+.arch-cap-icon {
+  font-size: 14px;
+}
+.arch-adapter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 8px;
+}
+.arch-adapter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  white-space: nowrap;
+}
+.arch-adapter-list {
+  font-size: 12px;
+  color: var(--muted, #8888a0);
+}
+
+/* ===== 第五层：技术底座 ===== */
+.arch-tech-layer {
+  width: 100%;
+}
+.arch-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.arch-tech-item {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+.arch-tech-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.arch-tech-item-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.arch-tech-item-cat {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-strong, #fff);
+  margin-bottom: 4px;
+}
+.arch-tech-item-desc {
+  font-size: 12px;
+  color: var(--muted, #8888a0);
+  line-height: 1.4;
+}
+
+/* 部署模式 */
+.arch-deploy-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.arch-deploy-card {
+  padding: 14px 16px;
+  background: rgba(6, 182, 212, 0.04);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 10px;
+  text-align: center;
+}
+.arch-deploy-icon {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+.arch-deploy-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #f0f0f4);
+  margin-bottom: 4px;
+}
+.arch-deploy-desc {
+  font-size: 11px;
+  color: var(--muted, #8888a0);
+  line-height: 1.4;
+}
+
+/* 数据流闭环 */
+.arch-dataflow {
+  text-align: center;
+  padding: 16px 20px;
+  background: rgba(34, 197, 94, 0.04);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  border-radius: 10px;
+}
+.arch-dataflow-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--success, #22c55e);
+  margin-bottom: 10px;
+}
+.arch-dataflow-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.arch-dataflow-step {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--body, #c8c8d0);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.arch-dataflow-arrow {
+  color: var(--success, #22c55e);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ===== 侧边栏 ===== */
+.arch-sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  animation: archFadeIn 0.2s ease;
+}
+.arch-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 90vw;
+  background: #12121a;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 101;
+  overflow-y: auto;
+  animation: archSlideIn 0.3s ease;
+  padding: 24px;
+}
+@keyframes archFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes archSlideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.arch-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+.arch-sidebar-dept {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.arch-sidebar-dept-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.arch-sidebar-scenario {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink-strong, #fff);
+  line-height: 1.3;
+}
+.arch-sidebar-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.arch-sidebar-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.arch-sidebar-close::before,
+.arch-sidebar-close::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  background: var(--muted, #8888a0);
+  border-radius: 1px;
+}
+.arch-sidebar-close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.arch-sidebar-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* 侧边栏智能体详情 */
+.arch-sidebar-agent {
+  margin-bottom: 24px;
+}
+.arch-sidebar-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.arch-sidebar-agent-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.arch-sidebar-agent-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink-strong, #fff);
+  margin-bottom: 2px;
+}
+.arch-sidebar-agent-role {
+  font-size: 13px;
+  color: var(--muted, #8888a0);
+}
+.arch-sidebar-agent-desc {
+  font-size: 14px;
+  color: var(--body, #c8c8d0);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.arch-sidebar-agent-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.arch-cap-tag {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 同部门其他智能体 */
+.arch-sidebar-related {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 20px;
+}
+.arch-sidebar-related-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #8888a0);
+  margin-bottom: 12px;
+}
+.arch-sidebar-related-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+.arch-sidebar-related-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.arch-sidebar-related-emoji {
+  font-size: 20px;
+}
+.arch-sidebar-related-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #f0f0f4);
+}
+.arch-sidebar-related-role {
+  font-size: 12px;
+  color: var(--muted, #8888a0);
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 1100px) {
+  .arch-dept-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .arch-tech-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .arch-dept-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .arch-deploy-row {
+    grid-template-columns: 1fr;
+  }
+  .arch-title-text {
+    font-size: 24px;
+  }
+  .arch-sidebar {
+    width: 100%;
+    max-width: 100vw;
+  }
+}
+@media (max-width: 480px) {
+  .arch-dept-grid {
+    grid-template-columns: 1fr;
+  }
+  .arch-agent-strip {
+    flex-direction: column;
+    align-items: center;
+  }
+}

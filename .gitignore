@@ -1,0 +1,19 @@
+﻿# 依赖
+node_modules/
+# 构建产物
+dist/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+# 运行时数据
+data/uploads/
+data/*.tmp
+*.log
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# 环境变量
+.env
