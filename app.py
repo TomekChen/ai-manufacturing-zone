@@ -218,6 +218,46 @@ def api_admin_heartbeat():
     return jsonify(get_projects())
 
 
+def probe_url(url, timeout=15):
+    """详细探测：返回 {alive, status, error}，供后台\"测试连接\"按钮实时反馈。"""
+    if not url:
+        return {"alive": False, "status": None, "error": "地址为空"}
+    last_err = None
+    for method in ("HEAD", "GET"):
+        try:
+            r = requests.request(
+                method, url,
+                timeout=(5, timeout),
+                headers={"User-Agent": "Heartbeat/1.0"},
+                verify=False,
+                allow_redirects=True,
+            )
+            alive = r.status_code < 500
+            return {
+                "alive": alive,
+                "status": r.status_code,
+                "error": None if alive else f"服务返回 {r.status_code}（5xx 视为异常）",
+            }
+        except requests.exceptions.SSLError:
+            return {"alive": True, "status": None, "error": "SSL 证书告警，但服务可达"}
+        except requests.exceptions.ConnectionError:
+            last_err = "无法建立连接（地址不可达 / 端口未监听 / 服务器无法回环访问本机公网地址）"
+        except requests.exceptions.Timeout:
+            last_err = "连接超时（服务器在该地址上无响应）"
+        except Exception as e:
+            last_err = str(e)[:160]
+    return {"alive": False, "status": None, "error": last_err or "未知错误"}
+
+
+@app.route("/api/admin/probe", methods=["POST"])
+def api_admin_probe():
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    payload = request.get_json(force=True) or {}
+    url = (payload.get("url") or "").strip()
+    return jsonify(probe_url(url))
+
+
 @app.route("/api/admin/upload", methods=["POST"])
 def api_admin_upload():
     if not verify_token(request.headers.get("Authorization", "")):

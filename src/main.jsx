@@ -24,6 +24,23 @@ const ICONS = {
   logout: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 12h9m0 0l-3-3m3 3l-3 3',
 };
 
+/* 主题色：兼容旧的命名色（blue…）与新的十六进制色，统一转成 hex 供 CSS 变量使用 */
+const NAMED_COLORS = {
+  blue: '#3b82f6', green: '#22c55e', purple: '#a855f7',
+  orange: '#f97316', cyan: '#22d3ee', pink: '#ec4899',
+};
+function toHex(color) {
+  if (!color) return NAMED_COLORS.blue;
+  if (color.startsWith('#')) return color;
+  return NAMED_COLORS[color] || NAMED_COLORS.blue;
+}
+// 由主色生成柔和背景（叠加透明度）
+function withAlpha(hex, alpha) {
+  const h = toHex(hex).replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 const AGENTS_FALLBACK = [
   {
     emoji: '🔧', color: 'blue', name: '设备医生', role: '预测性维护智能体',
@@ -149,6 +166,19 @@ function AdminLoginModal({ onClose, onLogin }) {
   );
 }
 
+/* ===== 探测结果徽标 ===== */
+function ProbeBadge({ res }) {
+  const ok = res.alive;
+  const detail = ok
+    ? (res.status ? `在线 · HTTP ${res.status}` : '在线 · 可达')
+    : (res.error || '不可达');
+  return (
+    <span className={`probe-badge ${ok ? 'ok' : 'fail'}`} title={res.url || ''}>
+      <span className="probe-dot"></span>{detail}
+    </span>
+  );
+}
+
 /* ===== 项目管理弹窗 ===== */
 function ProjectEditorModal({ project, token, onClose, onSave }) {
   const [name, setName] = useState(project?.name || '');
@@ -163,6 +193,22 @@ function ProjectEditorModal({ project, token, onClose, onSave }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState(null); // {target, alive, status, error}
+
+  const handleProbe = async (target) => {
+    const u = (target === 'heartbeat' ? (heartbeatUrl || url) : url).trim();
+    if (!u) { setProbeResult({ target, alive: false, error: '请先填写地址' }); return; }
+    setProbing(true); setProbeResult(null);
+    try {
+      const res = await apiPost('/admin/probe', { url: u }, token);
+      setProbeResult({ target, url: u, ...res });
+    } catch (err) {
+      setProbeResult({ target, url: u, alive: false, error: err?.message || '探测失败' });
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -224,10 +270,25 @@ function ProjectEditorModal({ project, token, onClose, onSave }) {
           <input type="text" value={role} onChange={(e) => setRole(e.target.value)} placeholder="如：预测性维护智能体" required />
           <label>项目介绍</label>
           <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="请输入项目简介" required />
-          <label>访问地址</label>
-          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="用户点击访问的地址，如 http://..." required />
-          <label>心跳检测地址（可选）</label>
-          <input type="url" value={heartbeatUrl} onChange={(e) => setHeartbeatUrl(e.target.value)} placeholder="如项目有 /health、/api/config 等轻量接口，可填写，留空则使用访问地址" />
+          <label>访问地址（用户点击跳转的地址）</label>
+          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="如 http://180.127.11.169:21886/" required />
+          <div className="field-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleProbe('url')} disabled={probing}>
+              <Icon d={ICONS.heart} size={14} /> {probing ? '测试中...' : '测试访问地址连通'}
+            </button>
+            {probeResult && probeResult.target === 'url' && <ProbeBadge res={probeResult} />}
+          </div>
+          <label>心跳检测地址（服务器内部探测用）</label>
+          <input type="url" value={heartbeatUrl} onChange={(e) => setHeartbeatUrl(e.target.value)} placeholder="本服务器上的项目请填内网地址，如 http://127.0.0.1:8804/；留空则用访问地址探测" />
+          <p className="field-hint">
+            心跳由服务器本机发起。若项目就部署在本服务器，用外网地址（如 180.127.11.169:21xxx）会因无法回环而误报"离线"，请填该服务的内网地址 <code>http://127.0.0.1:内部端口/</code>。
+          </p>
+          <div className="field-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleProbe('heartbeat')} disabled={probing}>
+              <Icon d={ICONS.heart} size={14} /> {probing ? '测试中...' : '测试心跳地址连通'}
+            </button>
+            {probeResult && probeResult.target === 'heartbeat' && <ProbeBadge res={probeResult} />}
+          </div>
           <label>项目图片</label>
           <div className="image-upload">
             <input id="project-image" type="file" accept="image/*" onChange={handleFileChange} />
@@ -247,10 +308,12 @@ function ProjectEditorModal({ project, token, onClose, onSave }) {
           </div>
           <label>能力要点（每行一条）</label>
           <textarea value={caps} onChange={(e) => setCaps(e.target.value)} rows={3} placeholder="每行一条能力" />
-          <label>主题色</label>
-          <select value={color} onChange={(e) => setColor(e.target.value)}>
-            {['blue','green','purple','orange','cyan','pink'].map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <label>主题色（用于卡片顶部色条、头像、访问按钮配色）</label>
+          <div className="color-picker-row">
+            <input type="color" value={toHex(color)} onChange={(e) => setColor(e.target.value)} className="color-swatch" />
+            <input type="text" value={color} onChange={(e) => setColor(e.target.value)} placeholder="#3b82f6 或命名色" className="color-text" />
+            <span className="color-preview-name">{toHex(color)}</span>
+          </div>
           {formError && <div className="form-error">{formError}</div>}
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>取消</button>
@@ -351,10 +414,16 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
             <div className="admin-form">
               <label>站点标题</label>
               <input type="text" value={localConfig.title || ''} onChange={(e) => setLocalConfig({...localConfig, title: e.target.value})} />
-              <label>主色调（十六进制）</label>
-              <input type="text" value={localConfig.accent || ''} onChange={(e) => setLocalConfig({...localConfig, accent: e.target.value})} placeholder="#3b82f6" />
+              <label>主色调</label>
+              <div className="color-picker-row">
+                <input type="color" value={toHex(localConfig.accent)} onChange={(e) => setLocalConfig({...localConfig, accent: e.target.value})} className="color-swatch" />
+                <input type="text" value={localConfig.accent || ''} onChange={(e) => setLocalConfig({...localConfig, accent: e.target.value})} placeholder="#3b82f6" className="color-text" />
+              </div>
               <label>画布背景色</label>
-              <input type="text" value={localConfig.canvas || ''} onChange={(e) => setLocalConfig({...localConfig, canvas: e.target.value})} placeholder="#0b0b0f" />
+              <div className="color-picker-row">
+                <input type="color" value={toHex(localConfig.canvas)} onChange={(e) => setLocalConfig({...localConfig, canvas: e.target.value})} className="color-swatch" />
+                <input type="text" value={localConfig.canvas || ''} onChange={(e) => setLocalConfig({...localConfig, canvas: e.target.value})} placeholder="#0b0b0f" className="color-text" />
+              </div>
               <div className="modal-actions">
                 <button className="btn btn-primary" onClick={saveConfig}>保存外观配置</button>
               </div>
@@ -486,13 +555,15 @@ function App() {
             </p>
           </div>
           <div className="agents-grid">
-            {displayAgents.map((a, i) => (
-              <div className="agent-card" key={a.id || i}>
+            {displayAgents.map((a, i) => {
+              const pc = toHex(a.color);
+              return (
+              <div className="agent-card" key={a.id || i} style={{ '--proj-color': pc, '--proj-soft': withAlpha(pc, 0.14), '--proj-glow': withAlpha(pc, 0.35) }}>
                 <div className="agent-image-wrap">
                   {a.image ? (
                     <img src={a.image} alt={a.name} className="agent-image" />
                   ) : (
-                    <div className={`agent-image agent-image-fallback ${a.color || 'blue'}`}>
+                    <div className="agent-image agent-image-fallback" style={{ background: `linear-gradient(135deg, ${withAlpha(pc, 0.55)}, ${pc})` }}>
                       <span>{a.emoji || '🤖'}</span>
                     </div>
                   )}
@@ -504,7 +575,7 @@ function App() {
                   )}
                 </div>
                 <div className="agent-header">
-                  <div className={`agent-avatar ${a.color || 'blue'}`}>
+                  <div className="agent-avatar" style={{ background: `linear-gradient(135deg, ${withAlpha(pc, 0.55)}, ${pc})` }}>
                     {a.image ? <img src={a.image} alt={a.name} /> : <span>{a.emoji || '🤖'}</span>}
                   </div>
                   <div>
@@ -528,7 +599,8 @@ function App() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
             {isAdmin && (
               <button className="agent-card agent-add-card" onClick={() => setEditorProject({})}>
                 <div className="agent-add-inner">
