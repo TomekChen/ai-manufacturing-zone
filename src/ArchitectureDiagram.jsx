@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ARCHITECTURE, findAgentByScenario, getAgentsByDepartment } from './architectureData';
+import { ARCHITECTURE, findAgentByScenario, getAgentsByDepartment, getDepartmentById } from './architectureData';
 import './architecture.css';
 
 /* ===== 层间连接箭头 ===== */
@@ -20,7 +20,7 @@ function LayerConnector() {
   );
 }
 
-/* ===== 第一层：企业顶层 ===== */
+/* ===== 业务顶层：企业 ===== */
 function EnterpriseLayer() {
   const { enterprise } = ARCHITECTURE;
   return (
@@ -33,7 +33,7 @@ function EnterpriseLayer() {
           </svg>
         </div>
         <div>
-          <div className="arch-enterprise-title">业务顶层：{enterprise.title}</div>
+          <div className="arch-enterprise-title">{enterprise.title}</div>
           <div className="arch-enterprise-sub">{enterprise.subtitle}</div>
         </div>
       </div>
@@ -41,22 +41,73 @@ function EnterpriseLayer() {
   );
 }
 
-/* ===== 第一层：部门-业务场景 ===== */
+/* ===== 组织架构树：总经理 → 副总 / 生产厂长 ===== */
+function OrgTree() {
+  const { org } = ARCHITECTURE;
+  return (
+    <div className="arch-orgtree">
+      {/* 总经理 */}
+      <div className="arch-org-ceo">
+        <div className="arch-org-ceo-name">{org.ceo.name}</div>
+        <div className="arch-org-ceo-en">{org.ceo.en}</div>
+      </div>
+      {/* 连接线 */}
+      <div className="arch-org-trunk" />
+      <div className="arch-org-branches">
+        {org.branches.map((b, i) => (
+          <div className="arch-org-branch" key={i}>
+            <div className="arch-org-drop" />
+            <div className="arch-org-branch-node">
+              <div className="arch-org-branch-name">{b.name}</div>
+              <div className="arch-org-branch-en">{b.en}</div>
+            </div>
+            <div className="arch-org-drop" />
+            <div className="arch-org-depts">
+              {b.deptIds.map((id) => {
+                const d = getDepartmentById(id);
+                if (!d) return null;
+                return (
+                  <span key={id} className="arch-org-leaf" style={{ '--leaf-color': d.color }}>
+                    {d.name}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ===== 第一层：部门-岗位-业务场景 ===== */
 function DepartmentLayer({ onScenarioClick }) {
   const { departments } = ARCHITECTURE;
   return (
     <div className="arch-layer arch-dept-layer">
       <div className="arch-layer-label">
         <span className="arch-layer-tag">第一层</span>
-        企业-部门-业务场景层（业务入口）
+        部门 - 岗位 - 业务场景层（业务入口 · 点击查看对应智能体）
       </div>
       <div className="arch-dept-grid">
         {departments.map((dept) => (
           <div className="arch-dept-col" key={dept.id}>
             <div className="arch-dept-header" style={{ borderColor: dept.color }}>
               <span className="arch-dept-dot" style={{ background: dept.color }}></span>
-              {dept.name}
+              <div className="arch-dept-head-txt">
+                <span className="arch-dept-name">{dept.name}</span>
+                <span className="arch-dept-en">{dept.en}</span>
+              </div>
             </div>
+            {/* 子岗位 */}
+            <div className="arch-pos-list">
+              {dept.positions.map((p, i) => (
+                <span key={i} className="arch-pos-tag" style={{ color: dept.color, borderColor: dept.color + '55' }}>
+                  {p}
+                </span>
+              ))}
+            </div>
+            {/* 业务场景 */}
             <div className="arch-scenario-list">
               {dept.scenarios.map((s) => (
                 <button
@@ -208,6 +259,9 @@ function DetailSidebar({ data, onClose }) {
             <div className="arch-sidebar-dept" style={{ color: department.color }}>
               <span className="arch-sidebar-dept-dot" style={{ background: department.color }}></span>
               {department.name}
+              {department.positions && (
+                <span className="arch-sidebar-dept-pos"> · {department.positions.join(' / ')}</span>
+              )}
             </div>
             <h3 className="arch-sidebar-scenario">{scenario.name}</h3>
           </div>
@@ -288,13 +342,14 @@ export default function ArchitectureDiagram() {
             <span className="arch-title-gradient">智能制造</span> AI 智能体整体解决方案
           </h2>
           <p className="arch-title-desc">
-            企业层级 → 部门 → 业务场景 → 智能体集群 → 技术底座 → 算力基础设施
+            组织架构 → 部门岗位 → 业务场景 → 智能体集群 → 协同调度 → 能力中台 → 技术底座
           </p>
         </div>
 
-        {/* 五层架构图 */}
+        {/* 架构图 */}
         <div className="arch-diagram">
           <EnterpriseLayer />
+          <OrgTree />
           <LayerConnector />
           <DepartmentLayer onScenarioClick={handleScenarioClick} />
           <LayerConnector />
