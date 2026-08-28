@@ -35,9 +35,78 @@ export const ARCHITECTURE = {
       color: '#10b981',
       positions: ['会计', '出纳'],
       scenarios: [
-        { id: 'fin-reimburse', name: '智能报销审核', agentId: 'agent-finance' },
-        { id: 'fin-cost', name: '成本核算分析', agentId: 'agent-finance' },
-        { id: 'fin-ar', name: '应收应付预警', agentId: 'agent-finance' },
+        {
+          id: 'fin-reimburse', name: '智能报销审核', agentId: 'agent-finance',
+          feature: {
+            category: '财务核算',
+            summary: '员工贴票报销，财务要逐张核对发票真伪、金额、科目与预算，月底常常堆积如山。AI 智能体自动识别发票、校验合规、生成凭证，只有异常单据才转人工复核。',
+            metrics: [
+              { value: '99.2%', label: '发票识别准确率' },
+              { value: '-70%', label: '报销处理时长' },
+              { value: '-60%', label: '人工复核量' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['拍照上传票据', 'OCR 识别发票', '合规与预算校验', '自动生成凭证', '异常转人工'],
+            before: [
+              '逐张手工核对发票，月底集中爆量易出错',
+              '假票、重复报销靠人眼难以发现',
+              '员工垫资久、报销体验差',
+            ],
+            after: [
+              '秒级识别发票自动入账，员工当天到账',
+              '假票与重复报销系统自动拦截',
+              '财务从核对转向异常处理与经营分析',
+            ],
+          },
+        },
+        {
+          id: 'fin-cost', name: '成本核算分析', agentId: 'agent-finance',
+          feature: {
+            category: '财务核算',
+            summary: '制造成本要把料、工、费归集分摊到每张工单，传统靠月底手工分摊，既滞后又不准。AI 智能体实时抓取 MES / ERP 数据自动归集分摊，随时给出成本与毛利。',
+            metrics: [
+              { value: '天→小时', label: '核算周期' },
+              { value: '+15%', label: '成本归集准确率' },
+              { value: '提前7天', label: '毛利异常发现' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集工单领料', '归集人工制费', '自动分摊', '计算单位成本', '毛利异常预警'],
+            before: [
+              '月底手工分摊，成本数据严重滞后',
+              '分摊规则靠经验，口径不稳定',
+              '毛利异常往往事后才发现',
+            ],
+            after: [
+              '成本实时归集，随时可查',
+              '分摊规则统一，口径一致可追溯',
+              '毛利异常即时预警，辅助定价与降本',
+            ],
+          },
+        },
+        {
+          id: 'fin-ar', name: '应收应付预警', agentId: 'agent-finance',
+          feature: {
+            category: '资金风控',
+            summary: '客户回款、供应商付款节点繁多，靠人盯账期容易漏，逾期直接影响现金流。AI 智能体自动跟踪账期，临期分级提醒并生成催收 / 付款建议。',
+            metrics: [
+              { value: '-45%', label: '逾期应收' },
+              { value: '+60%', label: '对账效率' },
+              { value: '92%', label: '现金流预测准确率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['同步开票与合同', '计算账期', '临期分级预警', '推送催收建议', '回款核销'],
+            before: [
+              '账期靠人工盯表，逾期发现晚',
+              '催收无据、口径不一',
+              '现金流预测凭经验，波动大',
+            ],
+            after: [
+              '临期自动分级提醒，逾期显著下降',
+              '催收 / 付款建议自动生成',
+              '现金流预测更准，资金安排更从容',
+            ],
+          },
+        },
       ],
     },
     {
@@ -47,9 +116,78 @@ export const ARCHITECTURE = {
       color: '#3b82f6',
       positions: ['项目部', '设计部'],
       scenarios: [
-        { id: 'eng-project', name: '项目交付跟踪', agentId: 'agent-engineering' },
-        { id: 'eng-bom', name: '图纸BOM问答', agentId: 'agent-engineering' },
-        { id: 'eng-trial', name: '新品试产分析', agentId: 'agent-engineering' },
+        {
+          id: 'eng-project', name: '项目交付跟踪', agentId: 'agent-engineering',
+          feature: {
+            category: '项目协同',
+            summary: '新品项目节点多、跨部门，进度散落在群聊和表格里，延期常常后知后觉。AI 智能体自动汇总各任务状态，识别关键路径风险并提醒责任人。',
+            metrics: [
+              { value: '+22%', label: '项目按期率' },
+              { value: '-80%', label: '进度收集耗时' },
+              { value: '提前5天', label: '延期风险预警' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['拆解项目任务', '采集各节点进展', '识别关键路径', '延期风险预警', '推送责任人'],
+            before: [
+              '进度靠人问人催，信息滞后',
+              '关键路径风险难提前发现',
+              '跨部门协同责任不清',
+            ],
+            after: [
+              '进度自动汇总，实时可视',
+              '关键路径延期提前预警',
+              '责任到人，协同更顺',
+            ],
+          },
+        },
+        {
+          id: 'eng-bom', name: '图纸BOM问答', agentId: 'agent-engineering',
+          feature: {
+            category: '工艺知识',
+            summary: '工程师查图纸、找版本、比对 BOM 差异，要在海量文件里翻找。AI 智能体基于图纸与 BOM 知识库做自然语言问答，秒级给出结果并附出处。',
+            metrics: [
+              { value: '-85%', label: '查图找料时间' },
+              { value: '94%', label: '问答准确率' },
+              { value: '-70%', label: '版本误用' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['自然语言提问', '检索图纸 / BOM 库', '定位有效版本', '生成答案', '附来源溯源'],
+            before: [
+              '图纸版本多，找对最新版费时',
+              'BOM 差异靠人工逐项比对',
+              '工艺知识散在个人手里难沉淀',
+            ],
+            after: [
+              '秒级定位有效版本与差异',
+              '答案附出处，可追溯可信',
+              '工艺知识沉淀成企业知识库',
+            ],
+          },
+        },
+        {
+          id: 'eng-trial', name: '新品试产分析', agentId: 'agent-engineering',
+          feature: {
+            category: '工艺知识',
+            summary: '试产数据多、问题杂，靠人工整理报告慢且不全。AI 智能体自动汇总试产良率、尺寸与工艺参数，定位问题项并给出改善建议。',
+            metrics: [
+              { value: '天→分钟', label: '试产报告生成' },
+              { value: '+50%', label: '问题定位效率' },
+              { value: '+12%', label: '一次试产成功率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集试产数据', '关联工艺参数', '定位不良项', '生成分析报告', '给出改善建议'],
+            before: [
+              '试产数据分散，人工汇总费时',
+              '问题项靠经验判断，易遗漏',
+              '报告格式不统一、复用性差',
+            ],
+            after: [
+              '数据自动汇总，报告分钟级生成',
+              '不良项精准定位',
+              '改善建议沉淀，提升一次成功率',
+            ],
+          },
+        },
       ],
     },
     {
@@ -59,9 +197,78 @@ export const ARCHITECTURE = {
       color: '#14b8a6',
       positions: ['人事', '后勤', '设备科', 'IT'],
       scenarios: [
-        { id: 'adm-attend', name: '智能考勤排班', agentId: 'agent-admin' },
-        { id: 'adm-equip', name: '设备预测性维护', agentId: 'agent-equipment' },
-        { id: 'adm-it', name: 'IT运维助手', agentId: 'agent-admin' },
+        {
+          id: 'adm-attend', name: '智能考勤排班', agentId: 'agent-admin',
+          feature: {
+            category: '人事行政',
+            summary: '排班要兼顾工时、技能与合规，人工排一次要几小时还常返工。AI 智能体按规则与人力自动排班，员工还能自助问答考勤政策。',
+            metrics: [
+              { value: '-90%', label: '排班耗时' },
+              { value: '+50%', label: '考勤异常处理效率' },
+              { value: '99%', label: '工时合规率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集出勤与需求', '匹配技能与工时', '自动生成排班', '冲突校验', '政策问答答疑'],
+            before: [
+              '手工排班费时且易违反工时规则',
+              '调班、请假靠人工反复协调',
+              '考勤政策咨询占用 HR 大量时间',
+            ],
+            after: [
+              '自动排班满足多重约束，秒级完成',
+              '调班冲突自动校验提醒',
+              '考勤政策自助问答，HR 从答疑中解放',
+            ],
+          },
+        },
+        {
+          id: 'adm-equip', name: '设备预测性维护', agentId: 'agent-equipment',
+          feature: {
+            category: '设备运维',
+            summary: '压铸机、CNC 一旦非计划停机，损失巨大。AI 智能体 7×24 监测振动与温度趋势，提前预警故障并自动生成保养工单。',
+            metrics: [
+              { value: '-40%', label: '非计划停机' },
+              { value: '提前7-30天', label: '故障预警' },
+              { value: '+12%', label: '设备 OEE' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集设备传感数据', '趋势与异常分析', '故障概率预测', '提前预警', '自动生成保养工单'],
+            before: [
+              '事后维修，停机损失大',
+              '定期保养一刀切，过保或欠保',
+              '备件靠经验备，急用时缺货',
+            ],
+            after: [
+              '故障提前预测，变事后为事前',
+              '按需保养，兼顾成本与可靠',
+              '备件建议智能生成，减少停机等待',
+            ],
+          },
+        },
+        {
+          id: 'adm-it', name: 'IT运维助手', agentId: 'agent-admin',
+          feature: {
+            category: 'IT 服务',
+            summary: '员工 IT 问题重复率高，运维被密码重置、装软件占满。AI 智能体做自助问答与常见故障自动处置，复杂问题才转人工。',
+            metrics: [
+              { value: '65%', label: '常见工单自助解决' },
+              { value: '<2分钟', label: '平均响应' },
+              { value: '-40%', label: '运维人力占用' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['员工描述故障', '意图识别', '知识库自助处置', '自动开工单', '疑难转人工'],
+            before: [
+              '重复问题反复占用运维人力',
+              '报修排队，响应慢',
+              '知识散落在个人，难复用',
+            ],
+            after: [
+              '常见问题自助秒级解决',
+              '自动分派工单，响应更快',
+              '运维聚焦疑难，效率提升',
+            ],
+          },
+        },
       ],
     },
     {
@@ -98,8 +305,54 @@ export const ARCHITECTURE = {
             ],
           },
         },
-        { id: 'biz-cs', name: '智能客服问答', agentId: 'agent-business' },
-        { id: 'biz-lead', name: '交期预警', agentId: 'agent-business' },
+        {
+          id: 'biz-cs', name: '智能客服问答', agentId: 'agent-business',
+          feature: {
+            category: '客户服务',
+            summary: '客户咨询重复且量大，客服疲于应对、夜间无人值守。AI 智能体 7×24 理解自然语言提问，秒级给出准确回复并沉淀常见问题。',
+            metrics: [
+              { value: '<10秒', label: '首次响应' },
+              { value: '70%', label: '自动解决率' },
+              { value: '-50%', label: '客服人力' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['多渠道接收咨询', '意图识别', '检索订单 / 知识库', '生成回复', '复杂转人工'],
+            before: [
+              '重复问题占用客服大量时间',
+              '夜间与高峰无人应答，客户流失',
+              '回复口径不一，质量参差',
+            ],
+            after: [
+              '7×24 秒级响应，不受时间限制',
+              '常见问题自动解决，人力聚焦复杂',
+              '回复标准统一，满意度提升',
+            ],
+          },
+        },
+        {
+          id: 'biz-lead', name: '交期预警', agentId: 'agent-business',
+          feature: {
+            category: '订单交付',
+            summary: '交期牵动订单、排产、物料多条线，人工核对慢且易漏。AI 智能体实时联动多系统测算交期风险，提前预警并给应对建议。',
+            metrics: [
+              { value: '提前5-7天', label: '交期延误预警' },
+              { value: '+15%', label: '准时交付率' },
+              { value: '-35%', label: '客户投诉' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['汇总订单与排产', '联动物料产能', '测算交期', '风险分级预警', '推送应对建议'],
+            before: [
+              '交期靠多系统人工拼算，费时易错',
+              '延误往往到临期才发现',
+              '对客户答复缺乏依据',
+            ],
+            after: [
+              '交期实时测算，延误提前预警',
+              '主动通知客户，降低投诉',
+              '答复有据，履约更稳',
+            ],
+          },
+        },
       ],
     },
     {
@@ -109,9 +362,78 @@ export const ARCHITECTURE = {
       color: '#f59e0b',
       positions: ['PC', 'MC', '仓库'],
       scenarios: [
-        { id: 'pcm-pc', name: '生产计划排程', agentId: 'agent-pcm' },
-        { id: 'pcm-mc', name: '物料齐套分析', agentId: 'agent-pcm' },
-        { id: 'pcm-wh', name: '库存水位优化', agentId: 'agent-pcm' },
+        {
+          id: 'pcm-pc', name: '生产计划排程', agentId: 'agent-pcm',
+          feature: {
+            category: '计划排程',
+            summary: '排产要平衡交期、机台、模具与物料，靠 Excel 排一次要大半天。AI 智能体多约束自动排程，插单变更秒级重排。',
+            metrics: [
+              { value: '-85%', label: '排程耗时' },
+              { value: '+18%', label: '计划达成率' },
+              { value: '-25%', label: '换线时间' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['读取订单与产能', '多约束求解排程', '生成工单计划', '插单动态重排', '下发执行'],
+            before: [
+              '手工排程慢，难以兼顾多约束',
+              '一有插单全盘重排，费时',
+              '计划与实际脱节，达成率低',
+            ],
+            after: [
+              '多约束自动排程，分钟级完成',
+              '插单秒级重排，快速响应',
+              '计划可执行性强，达成率提升',
+            ],
+          },
+        },
+        {
+          id: 'pcm-mc', name: '物料齐套分析', agentId: 'agent-pcm',
+          feature: {
+            category: '物料控制',
+            summary: '开工才发现缺料，停线等待成本高。AI 智能体按 BOM 与库存实时算齐套，缺料提前预警并建议采购。',
+            metrics: [
+              { value: '-60%', label: '缺料停线' },
+              { value: '小时→分钟', label: '齐套核算' },
+              { value: '-30%', label: '呆滞料' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['展开工单 BOM', '比对库存与在途', '计算齐套缺口', '缺料预警', '生成采购建议'],
+            before: [
+              '齐套靠人工查表，慢且易漏',
+              '缺料往往到开工才发现',
+              '采购与计划脱节',
+            ],
+            after: [
+              '齐套实时核算，缺口一目了然',
+              '缺料提前预警，保障不断料',
+              '采购建议自动生成，协同更紧',
+            ],
+          },
+        },
+        {
+          id: 'pcm-wh', name: '库存水位优化', agentId: 'agent-pcm',
+          feature: {
+            category: '库存管理',
+            summary: '库存压多占资金、压少易断料，安全库存靠经验拍脑袋。AI 智能体按需求波动动态测算水位，自动预警积压与短缺。',
+            metrics: [
+              { value: '-20%', label: '库存资金占用' },
+              { value: '-55%', label: '断料次数' },
+              { value: '+25%', label: '库存周转率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集出入库与需求', '分析消耗波动', '动态安全库存', '水位越限预警', '优化建议'],
+            before: [
+              '安全库存靠经验，长期不变',
+              '积压与短缺并存，两头吃亏',
+              '库存资金占用高',
+            ],
+            after: [
+              '水位随需求动态调整',
+              '积压与短缺双向预警',
+              '资金占用下降，周转更快',
+            ],
+          },
+        },
       ],
     },
     {
@@ -121,9 +443,79 @@ export const ARCHITECTURE = {
       color: '#ef4444',
       positions: ['压铸', '后加工', '装检'],
       scenarios: [
-        { id: 'prod-cast', name: '压铸排产', agentId: 'agent-production' },
-        { id: 'prod-exception', name: '产线异常处置', agentId: 'agent-production' },
-        { id: 'prod-capacity', name: '产能瓶颈分析', agentId: 'agent-production' },
+        {
+          id: 'prod-cast', name: '压铸排产', agentId: 'agent-production',
+          feature: {
+            category: '生产排产',
+            summary: '压铸机台、模具、合金料与交期相互交织，排产复杂。AI 智能体综合机台与模具状态自动排产，减少换模与等待。',
+            metrics: [
+              { value: '+15%', label: '设备利用率' },
+              { value: '-30%', label: '换模时间' },
+              { value: '+80%', label: '排产效率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['读取订单与机台', '匹配模具与工艺', '自动排产', '换模优化', '下发工单'],
+            before: [
+              '排产靠经验，机台模具匹配费时',
+              '换模顺序不合理，等待多',
+              '插单变更重排困难',
+            ],
+            after: [
+              '机台模具自动匹配，排产分钟级',
+              '换模顺序优化，减少停机等待',
+              '设备利用率与产出双升',
+            ],
+          },
+        },
+        {
+          id: 'prod-exception', name: '产线异常处置', agentId: 'agent-production',
+          feature: {
+            category: '现场管控',
+            summary: '产线一异常，靠人工层层上报，停机损失大。AI 智能体实时接收异常，自动定位原因、推送处置并升级跟踪。',
+            metrics: [
+              { value: '-70%', label: '异常响应时间' },
+              { value: '-35%', label: '平均停机时长' },
+              { value: '95%', label: '异常闭环率' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['接收异常上报', '关联数据分析', '定位根因', '推送处置方案', '超时升级'],
+            before: [
+              '异常靠人工逐级上报，响应慢',
+              '处置经验不共享，重复踩坑',
+              '超时无人跟进，闭环率低',
+            ],
+            after: [
+              '异常即时触达，秒级响应',
+              '根因与处置方案自动推送',
+              '超时自动升级，闭环可追溯',
+            ],
+          },
+        },
+        {
+          id: 'prod-capacity', name: '产能瓶颈分析', agentId: 'agent-production',
+          feature: {
+            category: '产能分析',
+            summary: '瓶颈在哪、还能不能加单，靠经验判断不准。AI 智能体多维分析负荷，量化瓶颈工序并给出改善与接单建议。',
+            metrics: [
+              { value: '+12%', label: '有效产能识别' },
+              { value: '天→实时', label: '瓶颈定位' },
+              { value: '90%', label: '加单评估准确率' },
+            ],
+            flowLabel: '评估维度',
+            flowStyle: 'dims',
+            flow: ['机台负荷', '模具可用性', '人力配置', '物料齐套', '换型频次'],
+            before: [
+              '瓶颈工序靠估，看不清',
+              '能不能接单心里没底',
+              '改善抓不到重点',
+            ],
+            after: [
+              '多维负荷量化，瓶颈一目了然',
+              '接单能力科学评估',
+              '改善聚焦关键，投入产出更高',
+            ],
+          },
+        },
       ],
     },
     {
@@ -133,9 +525,79 @@ export const ARCHITECTURE = {
       color: '#a855f7',
       positions: ['制模', '加工'],
       scenarios: [
-        { id: 'mold-review', name: '模具设计评审', agentId: 'agent-mold' },
-        { id: 'mold-progress', name: '制模进度跟踪', agentId: 'agent-mold' },
-        { id: 'mold-cnc', name: 'CNC加工排程', agentId: 'agent-mold' },
+        {
+          id: 'mold-review', name: '模具设计评审', agentId: 'agent-mold',
+          feature: {
+            category: '模具工艺',
+            summary: '模具设计评审靠老师傅经验，要点容易遗漏。AI 智能体对照标准与历史问题自动预审，列出风险点让评审更聚焦。',
+            metrics: [
+              { value: '+40%', label: '评审效率' },
+              { value: '-25%', label: '设计变更' },
+              { value: '-50%', label: '缺陷漏检' },
+            ],
+            flowLabel: '评估维度',
+            flowStyle: 'dims',
+            flow: ['结构合理性', '脱模与冷却', '加工可行性', '用料成本', '历史相似问题'],
+            before: [
+              '评审依赖个人经验，标准不一',
+              '历史踩过的坑重复出现',
+              '问题到制模后才暴露，返工贵',
+            ],
+            after: [
+              '标准与历史问题自动比对预审',
+              '风险点提前列出，评审聚焦',
+              '设计缺陷前置发现，减少返工',
+            ],
+          },
+        },
+        {
+          id: 'mold-progress', name: '制模进度跟踪', agentId: 'agent-mold',
+          feature: {
+            category: '模具工艺',
+            summary: '制模工序多、外协杂，进度靠人一个个问。AI 智能体自动汇总各工序进展，识别延误并提醒责任人。',
+            metrics: [
+              { value: '90%', label: '进度采集自动化' },
+              { value: '-15%', label: '制模周期' },
+              { value: '提前3天', label: '延误发现' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['拆解制模工序', '采集各工序进展', '关联交期', '延误预警', '推送责任人'],
+            before: [
+              '进度靠人问，信息滞后',
+              '外协环节不透明',
+              '延误发现晚，影响新品上市',
+            ],
+            after: [
+              '各工序进展自动汇总可视',
+              '外协进度纳入跟踪',
+              '延误提前预警，保障交期',
+            ],
+          },
+        },
+        {
+          id: 'mold-cnc', name: 'CNC加工排程', agentId: 'agent-mold',
+          feature: {
+            category: '加工排程',
+            summary: 'CNC 机台、刀具、程序与工件匹配复杂，排程靠人工。AI 智能体按交期与机台负荷自动排程，提升设备利用。',
+            metrics: [
+              { value: '+18%', label: 'CNC 利用率' },
+              { value: '-75%', label: '排程耗时' },
+              { value: '分钟级', label: '急单插单响应' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['读取加工任务', '匹配机台刀具', '自动排程', '插单重排', '下发程序'],
+            before: [
+              '机台刀具匹配靠经验，排程慢',
+              '急单插单打乱全局',
+              '设备空转与等待并存',
+            ],
+            after: [
+              '自动排程兼顾交期与负荷',
+              '插单秒级重排',
+              '设备利用率显著提升',
+            ],
+          },
+        },
       ],
     },
     {
@@ -145,9 +607,78 @@ export const ARCHITECTURE = {
       color: '#06b6d4',
       positions: ['QE', 'QC', '检测中心', '体系'],
       scenarios: [
-        { id: 'qa-visual', name: 'AI视觉质检', agentId: 'agent-quality' },
-        { id: 'qa-rootcause', name: '不良根因分析', agentId: 'agent-quality' },
-        { id: 'qa-spc', name: 'SPC数据分析', agentId: 'agent-quality' },
+        {
+          id: 'qa-visual', name: 'AI视觉质检', agentId: 'agent-quality',
+          feature: {
+            category: '智能质检',
+            summary: '人工目检慢、易疲劳漏检，标准还因人而异。AI 智能体用视觉模型实时检测缺陷，自动判定并剔除，标准始终一致。',
+            metrics: [
+              { value: '+300%', label: '检测速度' },
+              { value: '-80%', label: '漏检率' },
+              { value: '-50%', label: '质检人力' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['图像采集', '视觉模型识别', '缺陷分类定位', '自动判定剔除', '数据回传分析'],
+            before: [
+              '人工目检效率低、易疲劳漏检',
+              '判定标准因人而异',
+              '缺陷数据难沉淀分析',
+            ],
+            after: [
+              '高速在线检测，漏检大幅下降',
+              '判定标准统一、可追溯',
+              '缺陷数据自动回传，反哺改善',
+            ],
+          },
+        },
+        {
+          id: 'qa-rootcause', name: '不良根因分析', agentId: 'agent-quality',
+          feature: {
+            category: '质量改进',
+            summary: '不良发生后追溯原因要翻多个系统数据，慢且主观。AI 智能体自动关联工艺、设备、物料数据，定位根因并给改善方向。',
+            metrics: [
+              { value: '-70%', label: '根因定位时间' },
+              { value: '-35%', label: '重复不良' },
+              { value: '天→小时', label: '8D 报告生成' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['汇集不良数据', '关联工艺 / 设备 / 料', '相关性分析', '定位根因', '生成改善建议'],
+            before: [
+              '跨系统取数费时，分析滞后',
+              '根因靠经验推断，易误判',
+              '同类不良反复发生',
+            ],
+            after: [
+              '多源数据自动关联，快速定位',
+              '根因有数据支撑，判断更准',
+              '改善建议沉淀，减少重复不良',
+            ],
+          },
+        },
+        {
+          id: 'qa-spc', name: 'SPC数据分析', agentId: 'agent-quality',
+          feature: {
+            category: '过程控制',
+            summary: 'SPC 控制图靠人画、异常靠人盯，超限常常后知后觉。AI 智能体实时采集量测自动判异，过程失控即时预警。',
+            metrics: [
+              { value: '100%', label: '异常判异实时率' },
+              { value: '全工序', label: 'CPK 达标监控' },
+              { value: '+40%', label: '批量不良预防' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['采集量测数据', '计算控制限', '自动判异', '失控预警', '趋势分析'],
+            before: [
+              '控制图人工绘制，更新慢',
+              '判异规则复杂易漏',
+              '过程失控发现晚，酿成批量不良',
+            ],
+            after: [
+              '量测实时采集，控制图自动更新',
+              '判异规则自动执行，不漏报',
+              '失控即时预警，预防批量不良',
+            ],
+          },
+        },
       ],
     },
   ],

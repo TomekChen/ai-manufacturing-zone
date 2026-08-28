@@ -807,6 +807,12 @@
   font-size: 16px;
   font-weight: 700;
 }
+.arch-flow-dot {
+  color: var(--muted, #8888a0);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
 
 /* 引入前痛点 / 引入后收益 对比块 */
 .arch-callout {

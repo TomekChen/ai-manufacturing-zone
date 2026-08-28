@@ -217,8 +217,22 @@ PCM（齐套/库存/排程）、财务（报销发票识别）、品质（视觉
 **部署：** 本地 build 出 `index-BNP_Z86c.js` / `index-fvoekS0l.css` → 上传覆盖 `source/dist/` →
 `docker compose up -d --build` → 容器重建，线上已返回新 bundle 且含"引入前痛点"标记。
 
-**待老板确认：** 打开 http://47.115.223.159:8804/ → 架构图里点"业务部 → 订单智能跟单"看新卡片效果；
-满意则按同一 `feature` 结构铺开到其余契合场景。
+**老板确认：** 打开后满意，拍板"就这个观感，全部场景铺开"。
+
+### 3. 样板验收后铺开到全部 24 个业务场景
+
+老板认可样板观感，要求所有场景弹窗统一升级为价值卡。逐场景补 `feature` 内容：
+
+- 8 个部门 24 个业务场景全部加 `feature`（category / summary / metrics[3] / flowLabel+flow / before / after），
+  KPI 仍用行业标杆示意数字（通用站无真实客户数据）。
+- **流程链有两种形态**：大多数场景是"接收→处理→输出"的线性步骤，用 `→` 箭头；
+  但「产能瓶颈分析」「模具设计评审」本质是**并列评估维度**、没有先后顺序，硬套箭头会别扭。
+  给 `feature` 加了可选的 `flowStyle:'dims'`，侧边栏据此把分隔符从 `→` 换成中点 `·`（`.arch-flow-dot`），
+  `flowLabel` 也相应写成"评估维度"。
+- 无 `feature` 的场景保留旧简洁布局（向后兼容判断仍在），目前 24 个都已带上，等于全量切换。
+
+**部署：** 本地 build 出 `index-D4PNeRoN.js`（189 kB）/ `index-BIRSsk1_.css`（34 kB）→ 上传覆盖 `source/dist/` →
+`docker compose up -d --build` → 容器重建，线上 `curl` 返回新 bundle 且含"引入前痛点"标记。
 
 ---
 

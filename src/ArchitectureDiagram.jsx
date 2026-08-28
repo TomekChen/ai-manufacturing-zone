@@ -309,7 +309,11 @@ function DetailSidebar({ data, onClose }) {
                   {feature.flow.map((step, i) => (
                     <React.Fragment key={i}>
                       <span className="arch-flow-step">{step}</span>
-                      {i < feature.flow.length - 1 && <span className="arch-flow-arrow">→</span>}
+                      {i < feature.flow.length - 1 && (
+                        feature.flowStyle === 'dims'
+                          ? <span className="arch-flow-dot">·</span>
+                          : <span className="arch-flow-arrow">→</span>
+                      )}
                     </React.Fragment>
                   ))}
                 </div>
