@@ -71,7 +71,33 @@ export const ARCHITECTURE = {
       color: '#6366f1',
       positions: ['客服', '跟单'],
       scenarios: [
-        { id: 'biz-order', name: '订单智能跟单', agentId: 'agent-business' },
+        {
+          id: 'biz-order',
+          name: '订单智能跟单',
+          agentId: 'agent-business',
+          feature: {
+            category: '业务跟单',
+            summary:
+              '客户下单后，订单进度散落在 ERP、MES、WMS 与物流系统里，跟单员要一个个系统翻、打电话催。AI 智能体打通这些系统，自动盯住每张订单的关键节点，交期有风险提前预警，客户问起秒级给出进度与原因。',
+            metrics: [
+              { value: '<30秒', label: '订单进度响应' },
+              { value: '-73%', label: '人工跟单量' },
+              { value: '+18分', label: '客户满意度 NPS' },
+            ],
+            flowLabel: '处理流程',
+            flow: ['接收客户询单', '跨系统查订单状态', '识别延期风险', '生成进度回复', '异常升级人工'],
+            before: [
+              '跟单员在 ERP / MES / WMS 间反复横跳，查一单要十几分钟',
+              '交期风险靠人工盯，往往到了节点才发现延误',
+              '客户催单时答复口径不一，体验参差',
+            ],
+            after: [
+              '7×24 自动盯单，进度查询秒级返回',
+              '延期风险提前预警，主动通知客户',
+              '跟单员从查单中解放，专注异常处理与客户关系',
+            ],
+          },
+        },
         { id: 'biz-cs', name: '智能客服问答', agentId: 'agent-business' },
         { id: 'biz-lead', name: '交期预警', agentId: 'agent-business' },
       ],

@@ -172,6 +172,56 @@
 
 ---
 
+## 五·补4 第五轮（官网迁移阿里云 + 侧边场景"价值卡"新样式）
+
+### 1. 官网迁移到阿里云，部署方式改为 Docker
+
+老板把官网从原容器迁到了阿里云：新地址 **http://47.115.223.159:8804/**，SSH `root@47.115.223.159:22`。
+实测确认新部署形态（和老服务器完全不同，务必记住）：
+
+- 端口 8804 由 **docker-proxy** 监听 → 应用跑在名为 `ai-manufacturing-zone` 的容器里，`python app.py`。
+- 工程在宿主机 `/data/projects/ai-manufacturing-zone/`，用 **docker compose** 管理（service=app）。
+- 目录：`Dockerfile` + `docker-compose.yml` + `.env`（端口/管理员账号密码/SECRET_KEY）+ `NOTES.md` + `source/` + `data/`。
+- **只有 `data/` 是挂载卷**（映射到容器 `/app/data`，存 projects.json、uploads），容器重建不丢。
+- `source/` 里只有 `app.py`、`requirements.txt` 和**已编译的 `dist/`**——**没有前端 src 源码，宿主机也没装 node**。
+- Dockerfile 逻辑：装 python 依赖 → COPY app.py → COPY source/dist/ → CMD python app.py。
+
+**新的前端部署流程（和以前"上传 src 到服务器再 build"不一样）：**
+1. 本地 `F:\projects\ai-manufacturing-zone` 编辑 src → `npm install`（首次；Windows 默认 npm 缓存会 EPERM，
+   加 `--cache <工作区目录>` 绕过）→ `npx vite build` 生成 `dist/`。
+2. 把 `dist/`（index.html + assets/*.js/*.css）上传覆盖宿主机 `source/dist/`。
+3. `cd /data/projects/ai-manufacturing-zone && docker compose up -d --build` 重建镜像并重启容器。
+4. `curl 127.0.0.1:8804` 确认返回的是新 hash 的 bundle。
+
+### 2. 侧边弹窗"价值卡"新样式（老板给了参考图，先做 1 张样板）
+
+老板发来 4 张"AI Agent 场景"参考卡（星纪元公众号），说这种效果吸引用户，问加在哪些侧边弹窗合适。
+拆解参考卡好看的三要素——**① 三个量化 KPI 大数字 ② 一条"处理流程"步骤链 ③"引入前痛点✗/引入后收益✓"对比色块**，
+这三样我们原来的侧边弹窗（点业务场景滑出的 `DetailSidebar`）都没有。
+
+**契合度判断：** 这套"流程+数字"叙事最适合**交易/决策类、能量化前后对比**的场景——业务部（订单跟单/客服/交期）、
+PCM（齐套/库存/排程）、财务（报销发票识别）、品质（视觉质检）、生产（排产/异常）、设备（预测性维护）。
+**不适合**的是仪表盘类（经营看板）和纯知识问答类（人事政策/IT运维/图纸问答），它们没有清晰步骤链，硬套别扭。
+
+**老板拍板：** 先做 1 张样板（选最契合的「业务部 · 订单智能跟单」），用行业标杆示意数字，满意再铺开。
+
+**实现（向后兼容，最小改动）：**
+- `architectureData.js`：给 `biz-order` 场景加一个可选的 `feature` 对象（category / summary / metrics[3] /
+  flowLabel+flow / before / after）。**只有带 feature 的场景走新样式，其余场景保持原样**，方便逐张铺开。
+- `ArchitectureDiagram.jsx`：`DetailSidebar` 判断 `scenario.feature` 存在则渲染价值卡（分类标签→高亮描述→
+  KPI 三宫格→流程链→痛点/收益对比块→"核心能力"补充），否则走旧的简洁布局。加了个 `highlightAI()`
+  把描述里的"AI 智能体"高亮（用 split+map，不用 innerHTML）。
+- `architecture.css`：新增 `.arch-feature/.arch-metrics/.arch-flow/.arch-callout(-before/after)` 等样式，
+  沿用站点暗色主题（痛点红调、收益绿调），未做浅色版。
+
+**部署：** 本地 build 出 `index-BNP_Z86c.js` / `index-fvoekS0l.css` → 上传覆盖 `source/dist/` →
+`docker compose up -d --build` → 容器重建，线上已返回新 bundle 且含"引入前痛点"标记。
+
+**待老板确认：** 打开 http://47.115.223.159:8804/ → 架构图里点"业务部 → 订单智能跟单"看新卡片效果；
+满意则按同一 `feature` 结构铺开到其余契合场景。
+
+---
+
 ## 六、踩坑记录（现象 → 原因 → 解决）
 
 1. **黑屏 + `DEFAULT_FEATURES is not defined`**
@@ -199,6 +249,12 @@
    - 现象：加了新接口，请求却 404。
    - 原因：前几轮只改前端，dist 由 Flask 直服无需重启；但后端代码改动必须重启进程。
    - 解决：`bash /root/ai-manufacturing-zone/start.sh`（内含 pkill + setsid 重启）；watchdog 每 30s 兜底，端口活着就不干预。
+
+6. **迁阿里云后按老办法上传 src 到 /root 失败**
+   - 现象：`/root/ai-manufacturing-zone` 不存在，8804 由 docker-proxy 监听，宿主机没有 node，也找不到前端 src。
+   - 原因：迁移改成了 Docker 部署，源码只在宿主机 `source/`（且只留 app.py + 编译好的 dist），前端 src 不在服务器上。
+   - 解决：改为"本地 vite build → 上传覆盖 `source/dist/` → `docker compose up -d --build`"；
+     本地 `npm install` 报 EPERM（Windows 默认 npm 缓存被占用），加 `--cache <可写目录>` 绕过。
 
 ---
 
@@ -228,8 +284,13 @@ ai-manufacturing-zone/
 
 ## 八、启动方式
 
-服务器端：`cd /root/ai-manufacturing-zone && bash start.sh`（Flask 监听 8804）。
-前端改动：本地编辑 src/ → 上传 → `npx vite build` → dist 由 Flask 直服，无需重启后端。
+**当前（阿里云 Docker）：** 工程在 `/data/projects/ai-manufacturing-zone/`，`docker compose up -d --build` 起停；
+访问 http://47.115.223.159:8804/。端口/管理员账号密码/SECRET_KEY 在 `.env` 改，改完 `docker compose up -d` 生效。
+前端改动：本地 `F:\projects\ai-manufacturing-zone` 编辑 src → `npx vite build` → 覆盖 `source/dist/` →
+`docker compose up -d --build`（宿主机没有 node，不能就地 build）。后端 `app.py` 改动同理走 `--build` 重建镜像。
+
+**（历史·已废弃）原容器直跑：** `cd /root/ai-manufacturing-zone && bash start.sh`（Flask 监听 8804），
+前端上传 src 后在服务器 `npx vite build`。迁阿里云后不再用这套。
 
 ---
 

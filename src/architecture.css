@@ -732,6 +732,131 @@
   color: var(--muted, #8888a0);
 }
 
+/* ===== 侧边栏 · 场景价值卡（新样式） ===== */
+.arch-feature { margin-bottom: 26px; }
+.arch-feature-cat {
+  display: inline-block;
+  padding: 4px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+.arch-feature-summary {
+  font-size: 16.5px;
+  color: var(--body, #c8c8d0);
+  line-height: 1.75;
+  margin: 0 0 20px;
+}
+.arch-hl { color: var(--cyan, #22d3ee); font-weight: 700; }
+
+/* KPI 指标 */
+.arch-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.arch-metric {
+  padding: 16px 8px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+.arch-metric-value {
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+.arch-metric-label {
+  font-size: 13.5px;
+  color: var(--muted, #8888a0);
+  line-height: 1.3;
+}
+
+/* 通用分块标题 */
+.arch-block { margin-bottom: 22px; }
+.arch-block-title {
+  font-size: 14px;
+  color: var(--muted, #8888a0);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+/* 处理流程链 */
+.arch-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.arch-flow-step {
+  padding: 8px 14px;
+  font-size: 14.5px;
+  color: var(--ink, #f0f0f4);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.arch-flow-arrow {
+  color: var(--cyan, #22d3ee);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* 引入前痛点 / 引入后收益 对比块 */
+.arch-callout {
+  padding: 16px 18px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.arch-callout-before {
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+.arch-callout-after {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.24);
+}
+.arch-callout-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.arch-callout-before .arch-callout-title { color: var(--error, #ef4444); }
+.arch-callout-after .arch-callout-title { color: var(--success, #22c55e); }
+.arch-callout-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.arch-callout-list li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--body, #c8c8d0);
+}
+.arch-callout-before .arch-callout-list li::before {
+  content: '✕';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--error, #ef4444);
+  font-weight: 700;
+}
+.arch-callout-after .arch-callout-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--success, #22c55e);
+  font-weight: 700;
+}
+
 /* ===== 响应式 ===== */
 @media (max-width: 1100px) {
   .arch-dept-grid {

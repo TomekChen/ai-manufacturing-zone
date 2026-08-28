@@ -244,11 +244,21 @@ function TechLayer() {
   );
 }
 
+/* ===== 高亮描述里的 "AI 智能体 / AI Agent"（不用 innerHTML） ===== */
+function highlightAI(text) {
+  return text.split(/(AI 智能体|AI Agent)/g).map((p, i) =>
+    /^(AI 智能体|AI Agent)$/.test(p)
+      ? <span key={i} className="arch-hl">{p}</span>
+      : <React.Fragment key={i}>{p}</React.Fragment>
+  );
+}
+
 /* ===== 侧边栏：场景/智能体详情 ===== */
 function DetailSidebar({ data, onClose }) {
   if (!data) return null;
   const { department, scenario, agent } = data;
   const deptAgents = getAgentsByDepartment(department.id);
+  const feature = scenario.feature;
 
   return (
     <>
@@ -268,18 +278,88 @@ function DetailSidebar({ data, onClose }) {
           <button className="arch-sidebar-close" onClick={onClose}></button>
         </div>
 
-        {agent && (
-          <div className="arch-sidebar-agent">
-            <div className="arch-sidebar-agent-head">
-              <div className="arch-sidebar-agent-avatar" style={{ background: agent.color + '20', borderColor: agent.color }}>
-                <span>{agent.emoji}</span>
+        {feature ? (
+          <div className="arch-feature">
+            {feature.category && agent && (
+              <span
+                className="arch-feature-cat"
+                style={{ color: agent.color, borderColor: agent.color + '55', background: agent.color + '14' }}
+              >
+                {feature.category}
+              </span>
+            )}
+
+            {feature.summary && <p className="arch-feature-summary">{highlightAI(feature.summary)}</p>}
+
+            {feature.metrics && (
+              <div className="arch-metrics">
+                {feature.metrics.map((m, i) => (
+                  <div className="arch-metric" key={i}>
+                    <div className="arch-metric-value" style={{ color: agent ? agent.color : undefined }}>{m.value}</div>
+                    <div className="arch-metric-label">{m.label}</div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <div className="arch-sidebar-agent-name">{agent.name}</div>
-                <div className="arch-sidebar-agent-role">{agent.role}</div>
+            )}
+
+            {feature.flow && (
+              <div className="arch-block">
+                <div className="arch-block-title">{feature.flowLabel || '处理流程'}</div>
+                <div className="arch-flow">
+                  {feature.flow.map((step, i) => (
+                    <React.Fragment key={i}>
+                      <span className="arch-flow-step">{step}</span>
+                      {i < feature.flow.length - 1 && <span className="arch-flow-arrow">→</span>}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {feature.before && (
+              <div className="arch-callout arch-callout-before">
+                <div className="arch-callout-title">引入前痛点</div>
+                <ul className="arch-callout-list">
+                  {feature.before.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {feature.after && (
+              <div className="arch-callout arch-callout-after">
+                <div className="arch-callout-title">引入后收益</div>
+                <ul className="arch-callout-list">
+                  {feature.after.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          agent && (
+            <div className="arch-sidebar-agent">
+              <div className="arch-sidebar-agent-head">
+                <div className="arch-sidebar-agent-avatar" style={{ background: agent.color + '20', borderColor: agent.color }}>
+                  <span>{agent.emoji}</span>
+                </div>
+                <div>
+                  <div className="arch-sidebar-agent-name">{agent.name}</div>
+                  <div className="arch-sidebar-agent-role">{agent.role}</div>
+                </div>
+              </div>
+              <p className="arch-sidebar-agent-desc">{agent.desc}</p>
+              <div className="arch-sidebar-agent-caps">
+                {agent.capabilities.map((c, i) => (
+                  <span key={i} className="arch-cap-tag" style={{ borderColor: agent.color + '60', color: agent.color }}>{c}</span>
+                ))}
               </div>
             </div>
-            <p className="arch-sidebar-agent-desc">{agent.desc}</p>
+          )
+        )}
+
+        {/* 有 feature 时，把智能体核心能力作为补充块展示 */}
+        {feature && agent && agent.capabilities && (
+          <div className="arch-block">
+            <div className="arch-block-title">核心能力</div>
             <div className="arch-sidebar-agent-caps">
               {agent.capabilities.map((c, i) => (
                 <span key={i} className="arch-cap-tag" style={{ borderColor: agent.color + '60', color: agent.color }}>{c}</span>
