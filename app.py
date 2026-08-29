@@ -448,6 +448,8 @@ def _crawl_to_kb(url, doc_type="url"):
     title, text = kb.fetch_url_text(url)
     if not text or len(text.strip()) < 30:
         raise RuntimeError("页面正文内容太少，无法入库")
+    if kb.looks_like_nav_page(text):
+        raise RuntimeError("抓到的内容像是网站首页/栏目列表（全是标题、没有正文），请粘贴具体文章的详情页地址")
     doc = KB.add_text(text, title=title or url, url=url,
                       doc_type=doc_type, status="approved")
     return doc

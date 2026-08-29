@@ -23,7 +23,7 @@ const TYPE_LABEL = { upload: '用户上传', url: 'URL 采集', link: '友情链
 export default function AdminKB({ token, onNotify }) {
   const [docs, setDocs] = useState([]);
   const [stats, setStats] = useState(null);
-  const [filter, setFilter] = useState('pending'); // pending | approved | rejected | all
+  const [filter, setFilter] = useState('all'); // pending | approved | rejected | all
   const [crawlUrl, setCrawlUrl] = useState('');
   const [crawling, setCrawling] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -115,13 +115,17 @@ export default function AdminKB({ token, onNotify }) {
           type="url"
           value={crawlUrl}
           onChange={(e) => setCrawlUrl(e.target.value)}
-          placeholder="粘贴智能制造相关网页地址，抓取正文直接入库（如 https://www.e-works.net.cn/...）"
+          placeholder="粘贴【具体文章页】地址（不要网站首页），抓取正文入库。例：某篇政策解读/技术文章的详情页 URL"
           required
         />
         <button type="submit" className="btn btn-primary" disabled={crawling || !crawlUrl.trim()}>
           {crawling ? '采集中…' : '采集入库'}
         </button>
       </form>
+      <div className="kb-crawl-hint">
+        提示：请粘贴<strong>单篇文章的详情页地址</strong>。网站首页（如 e-works 首页、工信部首页）抓出来的只是栏目名和导航，没有正文价值。
+        采集成功后会自动弹出「预览」，可直接查看入库的分块正文。
+      </div>
 
       {/* 统计 + 筛选 */}
       <div className="kb-toolbar">

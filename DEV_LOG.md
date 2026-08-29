@@ -423,3 +423,43 @@ ai-manufacturing-zone/
 - `GET /api/kb/stats` 返回 `approved:7, chunks:101`（知识库存量未丢，重建后数据卷正常）。
 
 **已知限制更新**：问答 Markdown 已渲染；采集结果可在后台预览。仍不支持整站爬取/定时自动采集（边界明确）。
+
+---
+
+## 十一、第八轮：修「看不到入库内容」+「采集全是子标题没用」
+
+**需求来源**：老板实测反馈两个问题——
+1. 后台"知识库管理"里看不到入库的东西是什么；
+2. 采集下来的基本都是网站的子标题，没什么用。
+
+**根因定位（读代码 + 跑测试确认，非猜测）**：
+- 问题①其实不是没入库，是**列表默认停在"待审核"标签**（`AdminKB.jsx` 里 `useState('pending')`）。
+  而采集入库走的是 `_crawl_to_kb`，以 `approved`（已入库）状态直接写，绕过待审核 → 待审核页永远空。
+  预览正文的能力第七轮已经有了（每行"预览"按钮 + `DocPreview`），只是被默认筛选挡住了入口。
+- 问题②是**喂给采集器的是门户网站首页**（提示语举例、6 条友情链接默认值全是首页）。
+  首页正文本来就是一堆栏目名 + 文章标题；旧的 `fetch_url_text` 只是"整页去标签"，
+  于是把首页的标题列表当成正文入库（第七轮验证里"采集工控网首页 8546 字""采集 e-works 4441 字"其实多是这类标题）。
+
+**改动**：
+- `src/AdminKB.jsx`：默认筛选 `pending → all`；采集输入框提示语改成"粘贴【具体文章页】地址（不要网站首页）"；
+  下方加一条黄色提示 `.kb-crawl-hint`，说明首页抓出来只有栏目导航、采集成功会自动弹预览。
+- `src/style.css`：新增 `.kb-crawl-hint` 样式（复用 `--surface-2 / --warning` 设计令牌）。
+- `kb.py` 重写 `fetch_url_text` 为简易正文抽取（readability-lite）：
+  ① 丢弃结构性噪音标签（script/style/nav/header/footer/aside/form/button…）；
+  ② id/class 命中噪音词（comment/related/recommend/copyright/menu…）且文本 <600 字的块删掉（阈值防误删正文）；
+  ③ 用"语义正文容器优先（article/main/.content/.TRS_Editor/#UCAP-CONTENT…）→ 否则按 `文本量×(1-链接密度)` 打分取最高"
+     定位正文（链接密度低=像正文，高=像导航列表）；④ 标题优先 `og:title`/`twitter:title` → `<h1>` → `<title>`（去掉 `_站点名` 后缀）。
+- `kb.py` 新增 `looks_like_nav_page(text)`：抽出来的"正文"若没有一行像句子（长度≥40 或含句读），判定为首页/列表页。
+- `app.py` `_crawl_to_kb`：入库前调用 `looks_like_nav_page`，命中就报错
+  "抓到的内容像是网站首页/栏目列表（全是标题、没有正文），请粘贴具体文章的详情页地址"，不再静悄悄入库垃圾。
+
+**验证**（本地确定性 fixture 测试，内置 HTML，不依赖外网）：
+- 门户首页样本 → 抽出 65 字全是标题；`looks_like_nav_page=True`（会被后端拦截）。
+- 文章详情页样本 → 标题正确取到 `og:title`（非带 `_某智造网` 后缀的 title）；正文抽到；
+  导航/相关推荐/网友评论/版权"均未误入"（断言 False）；`looks_like_nav_page=False`（正常放行）。
+- `python -m py_compile kb.py app.py` 通过。
+
+**部署状态（重要）**：本轮 + 知识库整套（`kb.py`、`app.py` 的 KB 路由、`AdminKB/DocPreview/KnowledgeQA` 等）
+目前**只在本地 F 盘，尚未部署到阿里云**——服务器仍跑旧的 308 行 `app.py`（没有知识库）。
+上线需要：本地 `npx vite build`（前端）→ 上传 `dist/` + `kb.py` + `app.py` → 镜像装 `faiss-cpu / beautifulsoup4 / pypdf` →
+`.env` 配 `DASHSCOPE_API_KEY` → `docker compose up -d --build`。建议先在 PyCharm 本地跑通再部署。

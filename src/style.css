@@ -869,6 +869,14 @@ a.qa-source-name:hover { color: var(--accent); }
 .kb-admin { display: flex; flex-direction: column; gap: 14px; }
 .kb-crawl-row { display: flex; gap: 10px; }
 .kb-crawl-row input { flex: 1; }
+.kb-crawl-hint {
+  font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 8px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+.kb-crawl-hint strong { color: var(--body); }
 .kb-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .kb-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .kb-stat { color: var(--body); }
