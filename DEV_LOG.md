@@ -236,6 +236,76 @@ PCM（齐套/库存/排程）、财务（报销发票识别）、品质（视觉
 
 ---
 
+## 五·补5 第六轮（底层知识库：公网采集 + 用户上传 + RAG 问答 + 友情链接）
+
+### 1. 需求背景（与老板对齐）
+
+老板要求"底层知识库要采集行业的公网信息 + 企业用户上传"，页面上要有问答功能。
+经逐项确认的决策：
+
+| 决策点 | 结论 |
+|--------|------|
+| 数据源 | 公网采集 + 用户上传，一期同时做 |
+| 检索方案 | FAISS 文件型（本地 index 文件，无外部数据库） |
+| LLM/嵌入 | 阿里云百炼 MaaS：qwen-plus + text-embedding-v3（compatible-mode/v1，OpenAI 协议） |
+| 用户上传审核 | 需要管理员审核（pending → approve 入库 / reject） |
+| 上传格式 | TXT / Markdown / PDF |
+| 采集方式 | 管理员后台录入 URL 触发抓取（不做定时爬虫） |
+| 问答入口 | 首页新增"知识库问答"模块，访客免登录可用 |
+| 友情链接 | 底部展示权威站点；后台可增删改；每条链接可"一键采集入库"（解决"不知道去哪爬"） |
+| 用户隔离 | 不做（全部公共知识库，私人库后续扩展） |
+
+### 2. 实现内容
+
+**后端（新增 `kb.py` 知识库引擎 + `app.py` 新增 13 个路由）：**
+
+- `kb.py`：百炼嵌入/LLM 客户端（每批最多 10 条嵌入、失败给中文错误）、
+  文本切块（约 600 字/块、重叠 80、句读处断开）、网页正文抓取（requests + BeautifulSoup，剔除导航/脚本）、
+  PDF 文本提取（pypdf）、`KnowledgeStore` 类（文档审核流转 + FAISS IndexIDMap2 索引读写 + 检索 + RAG 问答 + 友情链接管理）。
+- 数据文件全部在 `data/` 挂载卷内：`kb_docs.json`（文档元数据）、`kb_chunks.json`（分块文本）、
+  `kb_index.faiss`（向量索引）、`kb_meta.json`（自增 id）、`links.json`（友情链接）。
+- 审核流转：用户上传 → pending（只存文本不嵌向量）；管理员通过 → 此时才嵌入入索引；拒绝/删除 → 索引同步移除（remove_ids）。
+- 管理员主动采集（后台录 URL / 友情链接一键采集）视为已审核，直接 approved 入库。
+- 问答：检索 top-5 → 拼参考资料 prompt → qwen-plus 生成，带引用来源（标题+URL+摘要，去重）；
+  知识库无相关内容时诚实告知，不让模型编造。
+- 防滥用：公开问答限流每 IP 每分钟 10 次、上传每 5 分钟 6 次；上传限 TXT/MD/PDF、10MB。
+
+**前端（新增 4 个组件 + main.jsx 接入）：**
+
+- `KnowledgeQA.jsx`：首页"知识库问答"模块——对话式 UI（建议问题气泡、回答带参考来源）、
+  旁边"＋上传资料"公开上传按钮（免登录，提示审核后入库）。
+- `LinkFooter.jsx`：底部"推荐站点"友情链接条——访客点击跳转；管理员登录时每条链接旁出现"采集"小按钮。
+- `AdminKB.jsx`：后台"知识库管理"标签——URL 采集输入框、统计（已入库/待审核/知识块数）、
+  状态筛选（待审核/已入库/已拒绝/全部）、审核操作（通过/拒绝/重新通过/删除）。
+- `AdminLinks.jsx`：后台"友情链接"标签——链接增删改 + 每条"采集入库"按钮。
+- 导航栏加"知识问答"锚点；首次启动自动预填 6 个智能制造权威站点（工信部、e-works、工控网、中国智能制造网、赛迪、电子标准院）。
+
+**部署配置：** `Dockerfile` 加 `COPY source/kb.py`；`docker-compose.yml`/`.env` 加 `DASHSCOPE_API_KEY`
+（`.env.example` 提供模板，真实 key 只在服务器 `.env`，不进 git）；`requirements.txt` 新增
+numpy / faiss-cpu / pypdf / beautifulsoup4。Dockerfile 与 docker-compose.yml 从此纳入 git 版本控制。
+
+### 3. 端到端验证（全部通过）
+
+| 验证项 | 结果 |
+|--------|------|
+| 公开上传 TXT → pending | ✅ 返回"等待管理员审核" |
+| 管理员登录 → 通过审核 | ✅ 嵌入入库（真实调百炼嵌入） |
+| RAG 问答（内网+公网） | ✅ qwen-plus 基于知识库回答，带引用来源，未编造 |
+| 后台录 URL 采集工控网首页 | ✅ 8546 字、15 个知识块直接入库 |
+| 友情链接一键采集 e-works | ✅ 4441 字、8 个知识块直接入库 |
+| 删除文档 | ✅ 向量同步移除（16→15 块） |
+| 公网 47.115.223.159:8804 | ✅ 新 bundle index-BnShum0V.js 上线 |
+| 默认友情链接初始化 | ✅ 6 条权威站点 |
+
+### 4. 踩坑记录
+
+- **本地冒烟测试用 mock 嵌入**：写了个临时脚本 mock `kb.embed_texts`，把"切块→pending→approve→search→reject→delete"
+  全流程在本地跑绿再上服务器，避免拿线上环境试错。真实百炼调用只在服务器端验证。
+- **Git Bash 的 curl -o /tmp/xxx 路径陷阱**：Windows 原生 curl 不认 MSYS 虚拟 `/tmp`，文件写到了别处；
+  验证公网接口时改为直接管道输出，不落盘。
+
+---
+
 ## 六、踩坑记录（现象 → 原因 → 解决）
 
 1. **黑屏 + `DEFAULT_FEATURES is not defined`**
@@ -276,22 +346,35 @@ PCM（齐套/库存/排程）、财务（报销发票识别）、品质（视觉
 
 ```
 ai-manufacturing-zone/
-├── app.py                    # Flask 后端：配置/项目/心跳/上传/登录 API + 静态托管
+├── app.py                    # Flask 后端：配置/项目/心跳/上传/登录/知识库/友情链接 API + 静态托管
+├── kb.py                     # 知识库引擎：百炼嵌入/LLM、切块、抓取、FAISS 索引、KnowledgeStore
+├── Dockerfile                # Docker 镜像构建（纳管版本控制）
+├── docker-compose.yml        # 编排（含 DASHSCOPE_API_KEY 透传）
+├── .env.example              # 环境变量模板（真实 .env 不进 git）
 ├── index.html                # Vite 入口
 ├── vite.config.js            # base:'./' 相对路径
 ├── package.json              # react + vite
-├── requirements.txt          # flask + requests
-├── start.sh                  # 启动脚本（PORT=8804）
-├── watchdog.sh               # 进程守护
-├── data/
+├── requirements.txt          # flask + requests + numpy + faiss-cpu + pypdf + bs4
+├── start.sh                  # 启动脚本（PORT=8804，历史遗留）
+├── watchdog.sh               # 进程守护（历史遗留）
+├── data/                     # 运行时数据（挂载卷，不进 git）
 │   ├── projects.json         # 项目卡片数据
-│   └── config.json           # 站点外观配置
+│   ├── config.json           # 站点外观配置
+│   ├── kb_docs.json          # 知识库文档元数据
+│   ├── kb_chunks.json        # 知识库分块文本
+│   ├── kb_index.faiss        # FAISS 向量索引
+│   └── links.json            # 友情链接
 └── src/
     ├── main.jsx              # 主应用（导航/管理后台/项目矩阵）
+    ├── KnowledgeQA.jsx       # 首页知识库问答 + 公开上传
+    ├── LinkFooter.jsx        # 底部友情链接（管理员可快捷采集）
+    ├── AdminKB.jsx           # 后台知识库管理（审核/URL采集）
+    ├── AdminLinks.jsx        # 后台友情链接管理
     ├── style.css             # 全局样式
     ├── ArchitectureDiagram.jsx  # 五层架构图组件 + 侧边栏
     ├── architecture.css      # 架构图样式
     └── architectureData.js   # 架构数据（部门/场景/智能体映射）
+}
 ```
 
 ---
@@ -312,3 +395,7 @@ ai-manufacturing-zone/
 
 - 架构图数据硬编码，改内容需改代码重新构建（下一轮做后台可配置）。
 - 智能体是展示原型，未对接真实可运行的智能体服务。
+- 知识库为全局公共库，无用户/企业隔离（后续按需扩展私人知识库）。
+- 文本切块为固定长度策略（600 字/块），未做语义切块；检索 top-5 固定。
+- 问答限流为单进程内存计数，容器重启清零（够用，未上 Redis）。
+- 采集仅支持单页抓取，不做整站爬取/定时任务（边界明确，防止失控）。
