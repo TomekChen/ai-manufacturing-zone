@@ -734,3 +734,145 @@ img { max-width: 100%; display: block; }
   .admin-toolbar { flex-wrap: wrap; }
   .admin-table th, .admin-table td { padding: 10px 12px; }
 }
+
+/* ===== 知识库问答模块（第六轮新增） ===== */
+.qa-section { padding-top: 24px; }
+.qa-card {
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.qa-messages {
+  max-height: 460px; min-height: 220px; overflow-y: auto;
+  padding: 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.qa-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; color: var(--muted);
+  min-height: 180px; text-align: center;
+}
+.qa-empty-icon { font-size: 40px; }
+.qa-empty p { font-size: 15px; }
+.qa-suggestions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.qa-suggestion {
+  padding: 8px 16px; border-radius: 9999px; font-size: 14px; cursor: pointer;
+  background: var(--surface-2); color: var(--body);
+  border: 1px solid var(--hairline); transition: all 0.2s ease;
+}
+.qa-suggestion:hover { border-color: var(--accent); color: var(--ink); }
+.qa-msg { display: flex; }
+.qa-msg.user { justify-content: flex-end; }
+.qa-msg.assistant { justify-content: flex-start; }
+.qa-bubble {
+  max-width: 82%; padding: 14px 18px; font-size: 15px; line-height: 1.7;
+  border-radius: var(--radius-md); white-space: pre-wrap; word-break: break-word;
+}
+.qa-msg.user .qa-bubble {
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+  color: #fff; border-bottom-right-radius: 4px;
+}
+.qa-msg.assistant .qa-bubble {
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--hairline); border-bottom-left-radius: 4px;
+}
+.qa-bubble-error { border: 1px solid rgba(239, 68, 68, 0.35) !important; color: var(--error) !important; }
+.qa-sources { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--hairline-strong); }
+.qa-sources-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
+.qa-source { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.qa-source-num {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; background: var(--accent-soft); color: var(--accent);
+}
+.qa-source-name {
+  font-size: 13px; color: var(--muted);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.qa-source-name:hover { color: var(--accent); }
+.qa-typing { color: var(--muted); }
+.dot-flashing { animation: dot-flash 1.2s infinite linear; }
+@keyframes dot-flash { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+.qa-input-row {
+  display: flex; gap: 10px; padding: 16px 20px;
+  border-top: 1px solid var(--hairline); background: var(--surface-2);
+}
+.qa-input-row input[type="text"] { flex: 1; }
+.qa-upload-msg { padding: 0 20px 14px; font-size: 13px; }
+.qa-upload-msg.ok { color: var(--success); }
+.qa-upload-msg.err { color: var(--error); }
+
+/* ===== 底部友情链接 ===== */
+.links-strip {
+  border-top: 1px solid var(--hairline);
+  padding: 36px 0 20px; margin-top: 0;
+  background: var(--surface-1);
+}
+.links-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.links-title {
+  font-size: 15px; font-weight: 600; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.links-title::before {
+  content: ""; width: 3px; height: 14px; border-radius: 2px;
+  background: var(--accent); display: inline-block;
+}
+.links-admin-hint { font-size: 12px; color: var(--muted); }
+.links-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.link-chip-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.link-chip {
+  display: inline-flex; align-items: center; padding: 8px 16px;
+  border-radius: 9999px; font-size: 14px;
+  background: var(--surface-2); color: var(--body);
+  border: 1px solid var(--hairline); transition: all 0.2s ease;
+}
+.link-chip:hover { border-color: var(--accent); color: var(--ink); transform: translateY(-1px); }
+.link-crawl-btn {
+  font-size: 11px; padding: 2px 8px; border-radius: 9999px; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid rgba(59, 130, 246, 0.3); transition: all 0.2s ease;
+}
+.link-crawl-btn:hover { background: var(--accent); color: #fff; }
+.link-crawl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.links-crawl-msg { margin-top: 12px; font-size: 13px; }
+.links-crawl-msg.ok { color: var(--success); }
+.links-crawl-msg.err { color: var(--error); }
+
+/* ===== 后台：知识库管理 / 友情链接管理 ===== */
+.status-pill.pending {
+  background: rgba(245, 158, 11, 0.08); color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.btn-danger {
+  background: rgba(239, 68, 68, 0.12); color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.btn-danger:hover { background: var(--error); color: #fff; }
+.kb-admin { display: flex; flex-direction: column; gap: 14px; }
+.kb-crawl-row { display: flex; gap: 10px; }
+.kb-crawl-row input { flex: 1; }
+.kb-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.kb-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.kb-stat { color: var(--body); }
+.kb-stat.ok { color: var(--success); }
+.kb-stat.warn { color: var(--warning); }
+.kb-stat.muted { color: var(--muted); }
+.kb-filters { display: flex; gap: 8px; }
+.kb-filter {
+  padding: 6px 14px; border-radius: 9999px; font-size: 13px; cursor: pointer;
+  background: var(--surface-2); color: var(--muted);
+  border: 1px solid var(--hairline); transition: all 0.2s ease;
+}
+.kb-filter.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.kb-notice { font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); }
+.kb-notice.ok { color: var(--success); background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.2); }
+.kb-notice.err { color: var(--error); background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); }
+.kb-empty-row { text-align: center; color: var(--muted); padding: 28px 0 !important; }
+.links-admin { display: flex; flex-direction: column; gap: 14px; }
+.links-admin-hint { font-size: 12px; }
+.link-edit-form {
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); padding: 16px;
+}
+.admin-table .btn-sm { margin-right: 6px; margin-bottom: 4px; }

@@ -2,6 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import './style.css';
 import ArchitectureDiagram from './ArchitectureDiagram';
+import KnowledgeQA from './KnowledgeQA';
+import LinkFooter from './LinkFooter';
+import AdminKB from './AdminKB';
+import AdminLinks from './AdminLinks';
 
 const API_BASE = '/api';
 
@@ -371,6 +375,8 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
         </div>
         <div className="admin-tabs">
           <button className={activeTab === 'projects' ? 'active' : ''} onClick={() => setActiveTab('projects')}>项目管理</button>
+          <button className={activeTab === 'kb' ? 'active' : ''} onClick={() => setActiveTab('kb')}>知识库管理</button>
+          <button className={activeTab === 'links' ? 'active' : ''} onClick={() => setActiveTab('links')}>友情链接</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
         <div className="admin-body">
@@ -410,6 +416,8 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
               </div>
             </>
           )}
+          {activeTab === 'kb' && <AdminKB token={token} />}
+          {activeTab === 'links' && <AdminLinks token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">
               <label>站点标题</label>
@@ -529,6 +537,7 @@ function App() {
           <ul className="nav-links">
             <li><a href="#architecture">架构图</a></li>
             <li><a href="#agents">项目矩阵</a></li>
+            <li><a href="#qa">知识问答</a></li>
           </ul>
           <div className="nav-actions">
             {isAdmin ? (
@@ -614,7 +623,10 @@ function App() {
         </div>
       </section>
 
+      <KnowledgeQA />
+
       <footer className="footer">
+        <LinkFooter isAdmin={isAdmin} token={token} />
         <div className="container">
           <div className="footer-bottom">
             <p>&copy; 2026 {displayTitle} 版权所有</p>
