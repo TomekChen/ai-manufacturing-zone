@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    container_name: ai-manufacturing-zone
+    ports:
+      - "${HOST_PORT:-8804}:8804"
+    environment:
+      PORT: 8804
+      ADMIN_ACCOUNT: ${ADMIN_ACCOUNT:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      # 阿里云百炼（DashScope 兼容模式）API Key，用于知识库嵌入与问答
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

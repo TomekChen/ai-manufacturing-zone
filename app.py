@@ -12,7 +12,10 @@ import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+import kb
+
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 全局上传上限 20MB（知识库文档放宽到 10MB）
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -26,6 +29,8 @@ PROJECTS_FILE = os.path.join(DATA_DIR, "projects.json")
 
 ALLOWED_IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_KB_EXTS = {"txt", "md", "pdf"}
+MAX_KB_SIZE = 10 * 1024 * 1024  # 知识库文档 10MB
 
 ADMIN_ACCOUNT = os.environ.get("ADMIN_ACCOUNT", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -290,6 +295,200 @@ def api_admin_login():
         token = hash_password(account + password + SECRET_KEY)[:32]
         return jsonify({"token": token})
     return jsonify({"error": "invalid account or password"}), 401
+
+
+# ===================== 知识库（RAG）=====================
+
+# 全局知识库存储（数据文件在 data/ 挂载卷内，容器重建不丢）
+KB = kb.KnowledgeStore(DATA_DIR)
+
+# 公开问答的简单内存限流：每 IP 每分钟最多 10 次
+_ask_limits = {}
+_ask_limit_lock = threading.Lock()
+
+
+def rate_limited(ip, limit=10, window=60):
+    now = time.time()
+    with _ask_limit_lock:
+        lst = [t for t in _ask_limits.get(ip, []) if now - t < window]
+        if len(lst) >= limit:
+            _ask_limits[ip] = lst
+            return True
+        lst.append(now)
+        _ask_limits[ip] = lst
+        return False
+
+
+@app.route("/api/kb/stats", methods=["GET"])
+def api_kb_stats():
+    return jsonify(KB.stats())
+
+
+@app.route("/api/links", methods=["GET"])
+def api_links():
+    return jsonify(KB.list_links())
+
+
+@app.route("/api/kb/upload", methods=["POST"])
+def api_kb_upload():
+    """公开上传：TXT/MD/PDF，进入待审核状态。"""
+    if rate_limited(request.remote_addr, limit=6, window=300):
+        return jsonify({"error": "上传太频繁，请稍后再试"}), 429
+    if "file" not in request.files:
+        return jsonify({"error": "没有收到文件"}), 400
+    file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({"error": "文件为空"}), 400
+    ext = secure_filename(file.filename).rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_KB_EXTS:
+        return jsonify({"error": "仅支持 TXT / Markdown / PDF 文件"}), 400
+    blob = file.read()
+    if len(blob) > MAX_KB_SIZE:
+        return jsonify({"error": "文件超过 10MB 限制"}), 400
+    if len(blob) == 0:
+        return jsonify({"error": "文件内容为空"}), 400
+
+    raw_name = file.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    try:
+        if ext == "pdf":
+            import io
+            text = kb.extract_pdf_text(io.BytesIO(blob))
+        else:
+            text = blob.decode("utf-8", errors="ignore")
+        doc = KB.add_text(text, title=raw_name, doc_type="upload", status="pending")
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": "文件解析失败：%s" % str(e)[:120]}), 400
+    return jsonify({"id": doc["id"], "status": doc["status"],
+                    "message": "上传成功，等待管理员审核后进入知识库"})
+
+
+@app.route("/api/kb/ask", methods=["POST"])
+def api_kb_ask():
+    """知识库问答：FAISS 检索 + 百炼 LLM 生成。"""
+    if rate_limited(request.remote_addr, limit=10, window=60):
+        return jsonify({"error": "提问太频繁，请稍后再试"}), 429
+    payload = request.get_json(force=True, silent=True) or {}
+    question = (payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "请输入问题"}), 400
+    if len(question) > 500:
+        return jsonify({"error": "问题太长（最多 500 字）"}), 400
+    try:
+        result = KB.ask(question)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        return jsonify({"error": "问答失败：%s" % str(e)[:120]}), 500
+    return jsonify(result)
+
+
+@app.route("/api/admin/kb/docs", methods=["GET"])
+def api_admin_kb_docs():
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
+
+
+@app.route("/api/admin/kb/docs/<doc_id>/approve", methods=["POST"])
+def api_admin_kb_approve(doc_id):
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        doc = KB.approve(doc_id)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": "入库失败：%s" % str(e)[:120]}), 502
+    return jsonify({"doc": doc, "stats": KB.stats()})
+
+
+@app.route("/api/admin/kb/docs/<doc_id>/reject", methods=["POST"])
+def api_admin_kb_reject(doc_id):
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        doc = KB.reject(doc_id)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"doc": doc, "stats": KB.stats()})
+
+
+@app.route("/api/admin/kb/docs/<doc_id>", methods=["DELETE"])
+def api_admin_kb_delete(doc_id):
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        KB.delete(doc_id)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
+
+
+def _crawl_to_kb(url, doc_type="url"):
+    """抓取 URL 并直接以 approved 状态入库（管理员操作，视为已审核）。"""
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise RuntimeError("地址必须以 http:// 或 https:// 开头")
+    title, text = kb.fetch_url_text(url)
+    if not text or len(text.strip()) < 30:
+        raise RuntimeError("页面正文内容太少，无法入库")
+    doc = KB.add_text(text, title=title or url, url=url,
+                      doc_type=doc_type, status="approved")
+    return doc
+
+
+@app.route("/api/admin/kb/crawl", methods=["POST"])
+def api_admin_kb_crawl():
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        doc = _crawl_to_kb(payload.get("url"))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": "采集失败：%s" % str(e)[:160]}), 502
+    return jsonify({"doc": doc, "message": "采集成功，已入库"})
+
+
+@app.route("/api/admin/links", methods=["GET", "POST"])
+def api_admin_links():
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    if request.method == "GET":
+        return jsonify(KB.list_links())
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        links = KB.save_link(payload)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(links)
+
+
+@app.route("/api/admin/links/<link_id>", methods=["DELETE"])
+def api_admin_links_delete(link_id):
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(KB.delete_link(link_id))
+
+
+@app.route("/api/admin/links/<link_id>/crawl", methods=["POST"])
+def api_admin_links_crawl(link_id):
+    """从友情链接一键采集入库。"""
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    link = next((l for l in KB.list_links() if l["id"] == link_id), None)
+    if not link:
+        return jsonify({"error": "链接不存在"}), 404
+    try:
+        doc = _crawl_to_kb(link["url"], doc_type="link")
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": "采集失败：%s" % str(e)[:160]}), 502
+    return jsonify({"doc": doc, "message": "「%s」采集成功，已入库" % link["name"]})
 
 
 # 静态文件服务（处理 SPA 路由）
