@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import DocPreview from './DocPreview';
 
 const API_BASE = '/api';
 
@@ -27,6 +28,7 @@ export default function AdminKB({ token, onNotify }) {
   const [crawling, setCrawling] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [notice, setNotice] = useState(null); // {ok, text}
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -37,6 +39,17 @@ export default function AdminKB({ token, onNotify }) {
       setStats(data.stats);
     } catch (err) {
       setNotice({ ok: false, text: err?.message || '加载失败' });
+    }
+  }, [token]);
+
+  const fetchDetail = useCallback(async (id) => {
+    setPreviewDoc(null);
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/docs/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(await readError(res));
+      setPreviewDoc(await res.json());
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '加载预览失败' });
     }
   }, [token]);
 
@@ -77,7 +90,8 @@ export default function AdminKB({ token, onNotify }) {
       if (!res.ok) throw new Error(data.error || '采集失败');
       setCrawlUrl('');
       await fetchDocs();
-      setNotice({ ok: true, text: `采集成功：「${data.doc?.title || u}」已入库（${data.doc?.chars || 0} 字）` });
+      setNotice({ ok: true, text: `采集成功：「${data.doc?.title || u}」已入库（${data.doc?.chars || 0} 字，${data.doc?.chunk_ids?.length || 0} 块）` });
+      if (data.doc?.id) fetchDetail(data.doc.id);
     } catch (err) {
       setNotice({ ok: false, text: err?.message || '采集失败' });
     } finally {
@@ -178,6 +192,7 @@ export default function AdminKB({ token, onNotify }) {
                       <button className="btn btn-ghost btn-sm" disabled={busyId === d.id + 'approve'}
                         onClick={() => doAction(d.id, 'approve')}>重新通过</button>
                     )}
+                    <button className="btn btn-ghost btn-sm" onClick={() => fetchDetail(d.id)}>预览</button>
                     <button className="btn btn-danger btn-sm" disabled={busyId === d.id + 'delete'}
                       onClick={() => doAction(d.id, 'delete')}>删除</button>
                   </td>
@@ -187,6 +202,7 @@ export default function AdminKB({ token, onNotify }) {
           </tbody>
         </table>
       </div>
+      {previewDoc && <DocPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
     </div>
   );
 }

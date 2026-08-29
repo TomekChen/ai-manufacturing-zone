@@ -391,6 +391,20 @@ def api_admin_kb_docs():
     return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
 
 
+@app.route("/api/admin/kb/docs/<doc_id>", methods=["GET"])
+def api_admin_kb_doc_detail(doc_id):
+    """管理员预览单条文档及分块内容。"""
+    if not verify_token(request.headers.get("Authorization", "")):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        detail = KB.get_doc_detail(doc_id)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": "加载失败：%s" % str(e)[:120]}), 500
+    return jsonify(detail)
+
+
 @app.route("/api/admin/kb/docs/<doc_id>/approve", methods=["POST"])
 def api_admin_kb_approve(doc_id):
     if not verify_token(request.headers.get("Authorization", "")):

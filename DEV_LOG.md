@@ -399,3 +399,27 @@ ai-manufacturing-zone/
 - 文本切块为固定长度策略（600 字/块），未做语义切块；检索 top-5 固定。
 - 问答限流为单进程内存计数，容器重启清零（够用，未上 Redis）。
 - 采集仅支持单页抓取，不做整站爬取/定时任务（边界明确，防止失控）。
+
+---
+
+## 十、第七轮：回答 Markdown 渲染 + 采集结果可见性
+
+**需求来源**：用户实测反馈两个问题——
+1. 首页问答回答仍是 Markdown 源码（`**加粗**`、`- 列表` 直接显示），对访客不友好；
+2. 管理员采集后不知道"采到了哪些数据、采下来的内容长啥样"。
+
+**改动**：
+- 前端新增 `src/markdown.js`：轻量 Markdown→HTML（标题/加粗/斜体/有序无序列表/行内代码），先做 HTML 转义再渲染，可安全 `dangerouslySetInnerHTML`；不引入额外 npm 依赖（绕开本机 npm safe-delete 卡死）。
+- `src/KnowledgeQA.jsx`：AI 回答改走 `renderMarkdown` 渲染，新增 `.qa-answer-content` 暗色主题排版样式（标题/列表/加粗/code 均按现有设计令牌）。错误与用户消息仍纯文本。
+- 后端 `kb.py` 新增 `get_doc_detail(doc_id)`：返回文档元数据 + 完整分块文本 `chunks` + `chunk_count`。
+- 后端 `app.py` 新增 `GET /api/admin/kb/docs/<doc_id>`（管理员鉴权），用于单文档预览。
+- 前端新增 `src/DocPreview.jsx` 弹窗组件：展示标题/URL/状态/来源/字数/知识块数，并逐块预览正文（超 240 字折叠"展开/收起"）。
+- `src/AdminKB.jsx`：文档列表每行加"预览"按钮；管理员 URL 采集成功后自动弹出所采文档的预览（显示字数、块数、分块内容）。
+- `src/AdminLinks.jsx`：友情链接"采集入库"成功后同样自动弹出预览。
+
+**验证**：
+- 公网首页 `index.html` 含新 bundle 指纹（`index-CCO6lwVH.js`）→ 前端已生效；
+- `GET /api/admin/kb/docs/<id>` 返回 `chunk_count` + `chunks`（实测首份文档 7 块、首块 587 字）；
+- `GET /api/kb/stats` 返回 `approved:7, chunks:101`（知识库存量未丢，重建后数据卷正常）。
+
+**已知限制更新**：问答 Markdown 已渲染；采集结果可在后台预览。仍不支持整站爬取/定时自动采集（边界明确）。

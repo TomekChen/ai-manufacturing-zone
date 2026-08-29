@@ -286,6 +286,22 @@ class KnowledgeStore:
                 return d
         return None
 
+    def get_doc_detail(self, doc_id):
+        """返回文档详情，包括完整分块文本（用于管理员预览）。"""
+        with self.lock:
+            doc = self.get_doc(doc_id)
+            if not doc:
+                raise RuntimeError("文档不存在")
+            chunks = []
+            for cid in doc.get("chunk_ids", []):
+                ch = self.chunks.get(cid)
+                if ch:
+                    chunks.append({"id": cid, "text": ch.get("text", "")})
+            detail = dict(doc)
+            detail["chunks"] = chunks
+            detail["chunk_count"] = len(chunks)
+            return detail
+
     def approve(self, doc_id):
         with self.lock:
             doc = self.get_doc(doc_id)

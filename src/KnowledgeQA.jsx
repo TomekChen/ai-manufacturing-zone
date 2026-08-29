@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import renderMarkdown from './markdown';
 
 const API_BASE = '/api';
 
@@ -106,7 +107,11 @@ export default function KnowledgeQA() {
             {messages.map((msg, i) => (
               <div key={i} className={`qa-msg ${msg.role}`}>
                 <div className={`qa-bubble ${msg.error ? 'qa-bubble-error' : ''}`}>
-                  {msg.text}
+                  {msg.role === 'assistant' && !msg.error ? (
+                    <div className="qa-answer-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
+                  ) : (
+                    msg.text
+                  )}
                   {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
                     <div className="qa-sources">
                       <div className="qa-sources-title">参考来源</div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import DocPreview from './DocPreview';
 
 const API_BASE = '/api';
 
@@ -18,6 +19,7 @@ export default function AdminLinks({ token }) {
   const [crawling, setCrawling] = useState(null);
   const [notice, setNotice] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const fetchLinks = useCallback(async () => {
     try {
@@ -26,6 +28,17 @@ export default function AdminLinks({ token }) {
       setLinks(await res.json());
     } catch (err) {
       setNotice({ ok: false, text: err?.message || '加载失败' });
+    }
+  }, [token]);
+
+  const fetchDetail = useCallback(async (docId) => {
+    setPreviewDoc(null);
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(await readError(res));
+      setPreviewDoc(await res.json());
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '加载预览失败' });
     }
   }, [token]);
 
@@ -75,7 +88,8 @@ export default function AdminLinks({ token }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '采集失败');
-      setNotice({ ok: true, text: data.message || '采集成功，已入库' });
+      setNotice({ ok: true, text: `${data.message || '采集成功，已入库'}（${data.doc?.chars || 0} 字，${data.doc?.chunk_ids?.length || 0} 块）` });
+      if (data.doc?.id) fetchDetail(data.doc.id);
     } catch (err) {
       setNotice({ ok: false, text: err?.message || '采集失败' });
     } finally {
@@ -137,6 +151,7 @@ export default function AdminLinks({ token }) {
           </tbody>
         </table>
       </div>
+      {previewDoc && <DocPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
     </div>
   );
 }
