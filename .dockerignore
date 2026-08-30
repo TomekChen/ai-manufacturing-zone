@@ -1,0 +1,36 @@
+# 版本控制 / IDE
+.git/
+.gitattributes
+.idea/
+.vscode/
+
+# Python 本地环境
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 前端依赖与源码（镜像里只需要 dist/ 构建产物）
+node_modules/
+src/
+index.html
+vite.config.js
+package.json
+package-lock.json
+pnpm-workspace.yaml
+
+# 运行时数据（compose 挂载 ./data，勿烘进镜像）
+data/
+
+# 文档 / 脚本 / 环境
+DEV_LOG.md
+KB_RAG_REFACTOR_SPEC.md
+tests/
+*.log
+.env
+.env.example
+start.sh
+watchdog.sh
+docker-compose.yml
+Dockerfile
+.dockerignore

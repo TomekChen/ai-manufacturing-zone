@@ -729,3 +729,37 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - 或其他老板临时想加的需求。
 
 **部署状态**：仍未上阿里云。`rag/eval_questions.json` 是题集**源码**，随代码部署，不进 gitignore；`data/kb_eval_results.json` 是运行时数据，容器 data 卷自动生成，滚动 20 条上限；无 `DASHSCOPE_API_KEY` 时评测端点走 400 分支，前端按钮置灰，与问答主流程无耦合，可正常上线。
+
+---
+
+## 十九、部署上线（前 6 个切片累积的 KB RAG 全功能一次性上阿里云）
+
+**老板指令**：「你先部署进阿里云吧。」
+
+**现状盘点（先只读探查，未动生产）**：`ai-manufacturing-zone` 早已作为 docker compose 项目常驻阿里云 ECS（`/data/projects/ai-manufacturing-zone`，宿主机 8804 端口，跑的是 8-29 的旧镜像、**只含单文件 `kb.py` 版 KB，没有本次重构的 rag/ 包**）。服务器采用 `source/` 打包约定：Dockerfile 里 `COPY source/app.py` 等，构建上下文根放 `Dockerfile + docker-compose.yml + source/`。`.env` 里 `DASHSCOPE_API_KEY` **已配置**（非空），embedding + 问答可直接用。`data/` 是服务器独有挂载卷，内含旧 KB 数据 8 篇文档 / 111 分块（`kb_docs/kb_chunks/kb_index.faiss/kb_meta`，但**无 `kb_raw.json`**——旧版单文件 kb.py 不存原文）。
+
+**动手前先解决的两个关键风险**：
+
+1. **本地 Dockerfile 过时且不匹配服务器约定**——旧 Dockerfile 只 COPY `source/{app.py,kb.py,dist}`，完全没有 `rag/` 包；而重构后的 `app.py` 依赖整条 `import kb → from rag...` 链，直接构建会得到一个 import 即崩的镜像。本地那份我改成了仓库根风格（`COPY app.py kb.py ./ && COPY rag/ ./rag/ && COPY dist/ ./dist/`），并补了 `.dockerignore`（排除 node_modules/.git/.venv/data，加速构建上下文）。但**服务器用的是 source/ 约定**，所以为保持这台机器的既有运维方式，交付包里的 Dockerfile 沿用 `source/` 前缀、只新增一行 `COPY source/rag/ ./rag/`。两套 Dockerfile 各有用途：仓库根那份给 clone/本地用，source/ 那份给这台服务器用。
+
+2. **新代码能否读旧 KB 数据（最要命的一条）**——读 `rag/store.py` 确认 Slice 1 是**纯结构搬迁**（其 docstring 自陈"把旧 kb.py 的 KnowledgeStore 原样搬来"），schema 未变：所有新字段都用 `.get(...)` 带默认值读取，`kb_raw.json` 缺失时 `self.raw={}`（只影响"换分块策略重建"，不影响检索/问答），`kb_meta.next_id` 容错读取，`kb_docs/kb_chunks/kb_index.faiss` 格式与旧数据逐字段一致。**结论：旧 8 篇文档可原样加载，零迁移零丢失。**
+
+**验证链（本地全程跑通后才碰生产）**：
+- `npm run build` → dist 41 模块，含 Slice 5/6 前端；
+- 本地 `docker build` 仓库根 Dockerfile → 起容器 → 前端 200、`/api/kb/ask`、评测三端点、无 Key 时评测 400、`require_admin` 的 `Authorization: Bearer` 鉴权 401/200 全部符合预期；
+- 用 `source/` 约定的交付包**再本地 build 一次**，并把**服务器真实旧数据**拉到本地挂进容器 → `/api/admin/kb/docs` 返回 stats `{total:8, approved:8, chunks:111}`，8 篇标题中文正常、分块数逐篇吻合，`/api/admin/kb/options` 三种检索策略齐活——**向后兼容坐实**。
+
+**生产部署（带回滚保障，一条脚本原子执行）**：
+1. 上传 `project.tar.gz`（含 `source/`+新 Dockerfile+compose，**不含 .env、不含 data/**）；
+2. 备份：`cp -a source source.bak-<ts>`、`tar czf data.bak-<ts>.tar.gz data`、`docker tag ...:latest ...:rollback-<ts>`（旧镜像留着随时回滚）；
+3. `rm -rf source && tar xzf project.tar.gz` 覆盖新代码（含 rag/），`.env` 与 `data/` 均不受影响；
+4. `docker compose up -d --build` 重建重启。
+
+**上线后功能复验（真机）**：新容器 Up、镜像 459MB（比旧 392MB 大是因新增 rank_bm25/jieba + rag 包）、回滚镜像在；对外 `http://47.115.223.159:8804/` HTTP 200，未登录访问后台评测端点 401。`/api/kb/ask "什么是数字孪生"` → `intent=knowledge`、`retrieval=hybrid`（**BM25+向量混合检索真跑通**）、返回 3 条资料 + 基于 KB 原文的实质回答；`"你好"` → `intent=smalltalk` 人设话术；无素材问题 → 诚实"知识库暂无"拒答；评测 `status`/`results`/`analytics` 全 200。**评测（Slice 6）未在服务器主动触发**——按 SPEC「手动重跑才花额度」，留给老板在后台点「重跑评测」再产生真实四指标数据。
+
+**遗留 / 已知点**：
+- 服务器 `SECRET_KEY` 仍是模板值 `change-me-in-production`、管理员仍 `admin/admin123`——上线前就该改，本次按老板"先部署"未擅改，**建议尽快改**（改了要重启容器，token 会失效需重登）；
+- 旧数据无 `kb_raw.json`：这 8 篇只能原样重嵌，不能换分块策略重建；要换策略得重新采集/上传（这是历史数据固有限制，非本次引入）；
+- Flask 仍是开发服务器直跑（compose 里 `python app.py`），这台机器沿用已久，非本切片范畴，若要更稳可换 gunicorn。
+
+**至此：6 个切片的 KB RAG 全功能（重构 + 混合检索 + 逐文档分块重建 + 问答看板 + 意图路由多轮对话 + 离线评测）已一次性上线阿里云，旧库数据完整保留、混合检索与问答在生产环境验证通过。**
