@@ -9,6 +9,13 @@ __pycache__/
 # 运行时数据
 data/uploads/
 data/*.tmp
+# 知识库运行时产物（含默认友链初始化），非源码，勿入库
+data/links.json
+data/kb_docs.json
+data/kb_chunks.json
+data/kb_raw.json
+data/kb_meta.json
+data/kb_index.faiss
 *.log
 # 编辑器/系统
 .vscode/
