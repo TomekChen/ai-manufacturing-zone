@@ -66,10 +66,19 @@ def summarize(records, days=30, now=None):
     up_rate = (fb_up / (fb_up + fb_down)) if (fb_up + fb_down) else 0.0
     avg_hits = (sum(r.get("hits", 0) or 0 for r in rows) / total) if total else 0.0
 
-    # 各策略并排对比（同策略内可比）
+    # 意图分布（Slice 5）：老记录无 intent 字段一律归入 knowledge，保持向后兼容
+    intents = {}
+    for r in rows:
+        it = r.get("intent") or "knowledge"
+        intents[it] = intents.get(it, 0) + 1
+
+    # 各策略并排对比（同策略内可比）；只统计真正走 KB 的检索，
+    # smalltalk/offtopic 的 retrieval 为 None/空，不计入以免污染对比。
     strat = {}
     for r in rows:
-        name = r.get("retrieval") or "unknown"
+        name = r.get("retrieval")
+        if not name:
+            continue
         b = strat.setdefault(name, {
             "count": 0, "refused": 0, "top_sum": 0.0, "top_n": 0, "up": 0, "down": 0,
         })
@@ -141,6 +150,7 @@ def summarize(records, days=30, now=None):
         "feedback_down": fb_down,
         "up_rate": round(up_rate, 4),
         "avg_hits": round(avg_hits, 3),
+        "intents": intents,
         "by_strategy": by_strategy,
         "trend": trend,
         "unanswered": unanswered,

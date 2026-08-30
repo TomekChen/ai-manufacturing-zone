@@ -26,6 +26,7 @@ from .retrievers import build_retriever, BM25Retriever
 from .embedding import embed_texts
 from .llm import chat
 from .telemetry import Telemetry
+from .intents import classify_intent, build_intent
 
 logger = logging.getLogger(__name__)
 
@@ -431,8 +432,9 @@ class KnowledgeStore:
                 })
             return hits
 
-    def _log_ask(self, ask_id, question, retrieval, hits, top_score, refused, answer, t0):
-        """记录一条问答遥测（Slice 4）。任何异常都吞掉——遥测绝不能拖垮正常回答。"""
+    def _log_ask(self, ask_id, question, retrieval, hits, top_score, refused, answer, t0,
+                 intent=None, rewritten=False, turns=0):
+        """记录一条问答遥测（Slice 4/5）。任何异常都吞掉——遥测绝不能拖垮正常回答。"""
         try:
             self.telemetry.record({
                 "id": ask_id,
@@ -445,55 +447,55 @@ class KnowledgeStore:
                 "answer_len": len(answer or ""),
                 "latency_ms": int((time.perf_counter() - t0) * 1000),
                 "feedback": None,
+                "intent": intent or "knowledge",
+                "rewritten": bool(rewritten),
+                "turns": turns,
             })
         except Exception:
             logger.warning("问答遥测记录失败（不影响回答）", exc_info=True)
 
-    def ask(self, question, retrieval=None):
-        """RAG 问答：按检索策略召回 top-k -> 拼 prompt -> qwen-plus 生成。
+    def _clean_history(self, history):
+        """清洗前端带来的多轮历史：只留 user/assistant、去空、按 HISTORY_MAX 截最近若干条。"""
+        out = []
+        for h in (history or []):
+            if not isinstance(h, dict):
+                continue
+            role = h.get("role")
+            content = (h.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                out.append({"role": role, "content": content[:1000]})
+        if len(out) > config.HISTORY_MAX:
+            out = out[-config.HISTORY_MAX:]
+        return out
 
-        返回值含 retrieval（实际生效策略，bm25/hybrid 缺依赖会降级为 vector）
-        与 ask_id（供前端 👍/👎 反馈回填遥测）。每次提问落一条看板日志。
+    def ask(self, question, history=None, retrieval=None):
+        """意图路由问答（Slice 5）：先判意图，再交对应策略处理。
+
+        - knowledge：按需用上下文改写 -> 检索 -> 拼上下文 -> 生成（无历史时与旧单轮完全一致）
+        - smalltalk：轻量人设直接作答（不检索）
+        - offtopic：礼貌拒答引导（不调 LLM，零 token）
+        返回含 intent / retrieval（实际策略，非知识问答为 None）/ ask_id（供 👍/👎 回填）。
         """
         if not question or not question.strip():
             raise RuntimeError("问题不能为空")
+        hist = self._clean_history(history)
         t0 = time.perf_counter()
-        hits = self.search(question, retrieval=retrieval)
-        used = hits[0]["retrieval"] if hits else (retrieval or config.DEFAULT_RETRIEVAL)
-        top_score = round(hits[0]["score"], 4) if hits else None
-        ask_id = secrets.token_hex(8)
-        if not hits:
-            answer = "知识库中暂无与该问题相关的内容。管理员可在后台上传资料或从友情链接采集行业信息后再次提问。"
-            self._log_ask(ask_id, question, used, 0, None, True, answer, t0)
-            return {"answer": answer, "sources": [], "retrieval": used, "ask_id": ask_id}
-        ctx = "\n\n".join(
-            "【资料%d】%s\n%s" % (i + 1, h["doc"].get("title", ""), h["text"])
-            for i, h in enumerate(hits)
+        intent = classify_intent(question, has_history=bool(hist))
+        handler = build_intent(intent)
+        res = handler.answer(
+            self, question, hist,
+            retrieval=(retrieval if intent == "knowledge" else None),
         )
-        messages = [
-            {
-                "role": "system",
-                "content": "你是「智能制造专区」的知识库助手。请仅根据用户提供的参考资料回答问题，"
-                           "用简体中文，条理清晰。参考资料中没有的内容不要编造；若资料不足以回答，"
-                           "请直接说明知识库暂无相关内容。回答末尾不要输出与回答无关的客套话。",
-            },
-            {"role": "user", "content": "参考资料：\n" + ctx + "\n\n问题：" + question.strip()},
-        ]
-        answer = chat(messages)
-        seen, sources = set(), []
-        for h in hits:
-            doc = h["doc"]
-            key = doc.get("url") or doc.get("title")
-            if key in seen:
-                continue
-            seen.add(key)
-            sources.append({
-                "title": doc.get("title", ""),
-                "url": doc.get("url", ""),
-                "snippet": h["text"][:160],
-            })
-        self._log_ask(ask_id, question, used, len(hits), top_score, False, answer, t0)
-        return {"answer": answer, "sources": sources, "retrieval": used, "ask_id": ask_id}
+        ask_id = secrets.token_hex(8)
+        self._log_ask(
+            ask_id, question, res.get("retrieval"), res.get("hits", 0),
+            res.get("top_score"), res.get("refused", False), res.get("answer", ""), t0,
+            intent=intent, rewritten=res.get("rewritten", False), turns=len(hist),
+        )
+        return {
+            "answer": res["answer"], "sources": res["sources"],
+            "retrieval": res["retrieval"], "intent": intent, "ask_id": ask_id,
+        }
 
     # ---------- 友情链接 ----------
 

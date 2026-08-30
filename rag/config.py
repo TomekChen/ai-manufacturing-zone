@@ -30,6 +30,9 @@ CHUNKER_OPTS = {
 TELEM_MAX = int(os.environ.get("KB_TELEM_MAX", "5000"))
 TELEM_TREND_DAYS = int(os.environ.get("KB_TELEM_DAYS", "30"))
 
+# 多轮对话（Slice 5）：随请求携带的最大历史条数（user+assistant 各计一条），防 prompt 膨胀
+HISTORY_MAX = int(os.environ.get("KB_HISTORY_MAX", "12"))
+
 
 def chunker_opts(name):
     return dict(CHUNKER_OPTS.get(name, {}))

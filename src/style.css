@@ -737,7 +737,58 @@ img { max-width: 100%; display: block; }
 
 /* ===== 知识库问答模块（第六轮新增） ===== */
 .qa-section { padding-top: 24px; }
+
+/* Slice 5：多会话侧栏布局 */
+.qa-layout { display: flex; gap: 16px; align-items: stretch; }
+.qa-sidebar {
+  flex: 0 0 220px; width: 220px;
+  background: var(--surface-1); border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.qa-newchat {
+  width: 100%; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff; font-size: 14px; font-weight: 500;
+  border: none; cursor: pointer; transition: background 0.2s ease;
+}
+.qa-newchat:hover { background: var(--accent-deep); }
+.qa-newchat-inline { width: auto; padding: 8px 14px; }
+.qa-chatlist {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  max-height: 520px;
+}
+.qa-chat {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-radius: var(--radius-sm); cursor: pointer;
+  background: transparent; border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.qa-chat:hover { background: var(--surface-2); }
+.qa-chat.active { background: var(--accent-soft); border-color: var(--accent); }
+.qa-chat-title {
+  flex: 1; font-size: 14px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.qa-chat.active .qa-chat-title { color: var(--accent); }
+.qa-chat-del {
+  flex-shrink: 0; width: 20px; height: 20px; line-height: 1;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--muted); font-size: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.qa-chat:hover .qa-chat-del { opacity: 1; }
+.qa-chat-del:hover { color: var(--error); background: var(--surface-3); }
+.qa-mobile-bar { display: none; }
+.qa-intent-tag {
+  margin-top: 10px; display: inline-block;
+  font-size: 11px; font-weight: 500; color: var(--muted);
+  background: var(--surface-3); border: 1px solid var(--hairline);
+  border-radius: 9999px; padding: 2px 10px;
+}
+
 .qa-card {
+  flex: 1 1 auto; min-width: 0;
   background: var(--surface-1);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
@@ -818,6 +869,34 @@ a.qa-source-name:hover { color: var(--accent); }
 .qa-answer-content code {
   font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em;
   background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; color: var(--accent);
+}
+
+/* Slice 5：窄屏下侧栏转为抽屉，顶部条显示切换按钮 */
+@media (max-width: 860px) {
+  .qa-layout { position: relative; }
+  .qa-sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0; z-index: 30;
+    width: 78%; max-width: 280px; flex-basis: auto;
+    transform: translateX(-105%); transition: transform 0.25s ease;
+    box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  }
+  .qa-layout.sidebar-open .qa-sidebar { transform: translateX(0); }
+  .qa-layout.sidebar-open::after {
+    content: ""; position: fixed; inset: 0; z-index: 20;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .qa-mobile-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--hairline);
+    background: var(--surface-2);
+  }
+  .qa-sidebar-toggle {
+    padding: 8px 14px; border-radius: var(--radius-sm); cursor: pointer;
+    background: var(--surface-1); color: var(--ink);
+    border: 1px solid var(--hairline-strong); font-size: 14px;
+  }
+  .qa-sidebar-toggle:hover { border-color: var(--accent); color: var(--accent); }
 }
 
 /* ===== 底部友情链接 ===== */

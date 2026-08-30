@@ -651,3 +651,40 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **至此 Slice 4 完成（后端+前端+测试），无遗留。** 下一切片：Slice 5 离线 RAGAS-lite 评测（内置小标准题集 + 手动「重跑评测」才花 token + 四指标横向对比 + 可选真实问答抽样裁判 + 后台评测卡 + Seam S5）。
 
 **部署状态**：仍未上阿里云；`kb_telemetry.json` 为新数据文件，容器 data 卷自动生成。公开 `/api/kb/feedback` 与既有 `/api/kb/ask` 同属免鉴权前台接口，靠限流兜底。
+
+---
+
+## 十七、第十四轮：意图路由 + 多轮对话（Slice 5，老板临时改需求）
+
+> **计划变更说明（务必留痕）**：SPEC §六 原定 Slice 5 是「离线 RAGAS-lite 评测」，且「多轮对话记忆」在 SPEC §三被明确列为**超出范围**。本轮老板拍板把 Slice 5 改成**意图路由 + 多轮对话**，RAGAS-lite 评测**顺延为 Slice 6**。多轮记忆从「超范围」改纳入本切片，属对已签功能清单的有意调整，已在此记录，非擅自扩范围。
+
+**目标**：让知识库问答从「单轮死答」升级成——① 先判**意图**（行业知识 / 闲聊问候 / 明显跑题）分流处理；② 支持**多轮追问**，能听懂「那它呢」「还有呢」这类靠上下文的追问；③ 无登录前提下按访客隔离会话，并把上面这些自然接入 Slice 4 的遥测看板。
+
+**关键设计取舍**：
+- **意图识别走「规则」不走大模型**：`rag/intents/rules.py` 是纯函数（领域词命中→知识；短寒暄词→闲聊；跑题词→超范围；判不准→默认知识，宁可多答不误拒）。零 token、确定性、可单测，也符合老板「能不调模型就不调、省额度」的取向。`classify_intent / pick_retrieval / needs_rewrite / build_messages` 全可离线断言（Seam S5）。
+- **三种意图用「注册表 + 策略类」**（和 Slice 1 分块、Slice 2 检索一个套路）：`rag/intents/` 子包，`base.py` 定义 `IntentHandler` 抽象 + `INTENTS` 注册表，`handlers.py` 注册 knowledge / smalltalk / offtopic 三个处理器，`store.ask` 只做「分类→取处理器→执行→落遥测」的分发。**知识问答分支的系统人设文案与 Slice 4 的旧 `ask` 一字不差**，保证单轮零回归。闲聊走轻量 LLM 友好回应（LLM 挂了降级固定话术），跑题直接给引导话术、**一次都不调模型**。
+- **多轮记忆 = 前端带历史、后端保持无状态**：后端不存会话状态，每次请求由前端把 `history`（最近若干条 user/assistant）随 `question` 一起发来。好处：① 天然免登录、无需服务端会话存储；② **每个访客各看各的**——对话记录存在浏览器 `localStorage`（`kb_chats_v1`），换浏览器/清缓存即分开，不同访客互不可见，符合老板「没有注册登录也要每人历史不同」的诉求。
+- **多会话侧栏（类 ChatGPT）**：前端 `KnowledgeQA.jsx` 重写成左侧会话列表 + 右侧对话区，可新建/切换/删除会话（删除带二次确认）；窄屏侧栏收成抽屉，用「☰ 会话」顶栏唤出。
+- **上下文改写（追问补全）**：`needs_rewrite` 命中指代词或极短追问时，先用一次 `temperature=0` 的小 LLM 调用把追问改写成「不依赖上下文、能独立检索」的完整问题（`REWRITE_SYSTEM`），再拿改写后的句子去检索与作答；改写失败（无 Key / 异常）自动回退原问题，不阻断。`config.HISTORY_MAX`（默认 12，可 env 覆盖）统一裁剪历史长度。
+- **遥测顺手记意图**：Slice 4 的 `summarize` 向后兼容——老记录没有 `intent` 字段一律归入 knowledge；`by_strategy` 只统计**真正走了检索**的问答，闲聊/跑题的 `retrieval=None` 被剔除，不污染各策略对比。看板新增 `intents` 三分类计数，`Telemetry` 记录新增 `intent / rewritten / turns` 三字段。
+
+**本轮做了什么**：
+- 后端：
+  - 新增 `rag/intents/`（`__init__.py` 触发注册并再导出 `classify_intent/build_intent`；`rules.py` 纯规则；`base.py` 抽象+注册表；`handlers.py` 三处理器 + `_rewrite_query`）。
+  - `rag/config.py` 加 `HISTORY_MAX`(12)。
+  - `rag/store.py`：`ask()` 重写为**意图分发**（分类→`build_intent`→处理器→`_log_ask` 带 intent/rewritten/turns），新增 `_clean_history` 过滤/裁剪历史；返回体加 `intent`。
+  - `rag/telemetry.py`：记录新增三字段；`summarize` 加 `intents` 分布、`by_strategy` 跳过非 KB 检索（向后兼容）。
+  - `app.py`：`/api/kb/ask` 透传前端 `history`（非 list 视为 None）。`kb.py` 无需改（`ask` 签名向后兼容，多轮只是新增入参）。
+- 前端：
+  - `src/KnowledgeQA.jsx` 重写为**多会话侧栏**（`localStorage` 持久化、每轮携带 `history`、答案下显示**意图标签**、保留 Slice 4 的 👍/👎 与公开上传）。
+  - `src/style.css` 补 `.qa-layout/.qa-sidebar/.qa-newchat/.qa-chat*/.qa-mobile-bar/.qa-sidebar-toggle/.qa-intent-tag` 及 ≤860px 抽屉响应式，全部复用既有设计令牌，暗色一致，未引新色值。
+
+**测试与验证**：
+- 新增 `tests/test_rag_intents.py` **15/15**（Seam S5，纯离线确定性）：三意图分类（含领域词优先压过寒暄、判不准默认知识、带历史追问归知识交改写）、精确型号/编号词偏好 bm25、`needs_rewrite` 三类判据、`build_messages` 顺序/角色/裁剪/空历史、`summarize` 意图分布 + 老记录缺字段归知识 + `by_strategy` 剔除非 KB 检索。
+- 回归：`test_rag_unit` 11/11、`test_rag_retrieval` 9/9、`test_rag_rebuild` 6/6、`test_rag_telemetry` 10/10 仍全过（五文件合计 **51/51**）。
+- 全栈冒烟（假 faiss/bs4/嵌入/LLM）28 项断言全绿：① 知识单轮——`intent=knowledge`、`answer` 来自 KB-LLM、有 sources、回传 `ask_id`；② 多轮追问——`needs_rewrite` 命中→`_rewrite_query` 恰调用一次→遥测 `rewritten=True/turns=2/intent=knowledge`；③ 闲聊——`intent=smalltalk`、`retrieval=None`、走轻量 LLM 一次；④ 跑题——`intent=offtopic`、返回引导话术、**全程零 LLM 调用**；⑤ 遥测 `intents` 三分类计数正确、`by_strategy` 无非 KB 键；⑥ `app.test_client()` POST `/api/kb/ask` 带 `history` → 200 且响应含 `intent/ask_id`。
+- `npm run build` 成功（40 模块，`dist/assets/index-*.js` 222.12 kB、css 50.70 kB），产物已确认含多会话侧栏与意图标签新码。
+
+**至此 Slice 5（意图路由 + 多轮对话，后端+前端+测试）完成，无遗留。** 下一切片：Slice 6 = 原 SPEC 的离线 RAGAS-lite 评测（内置小标准题集 + 手动「重跑评测」才花额度 + 四指标横向对比 + 可选真实问答抽样裁判 + 后台评测卡 + Seam S5 评测向）——**开工前先与老板确认**。
+
+**部署状态**：仍未上阿里云。后端**无状态**，本切片不新增数据文件（会话状态只在访客浏览器 `localStorage`）；遥测多出的 `intent/rewritten/turns` 字段随 `kb_telemetry.json` 落盘，容器 data 卷自动生成，老记录无这些字段也能被 `summarize` 兼容处理。
