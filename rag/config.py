@@ -16,6 +16,10 @@ SEMANTIC_MIN = int(os.environ.get("KB_SEMANTIC_MIN", "100"))
 
 TOP_K = int(os.environ.get("KB_TOP_K", "5"))
 
+# 检索默认策略：hybrid（向量+BM25+RRF）。缺 jieba/rank_bm25 时 store 自动回退 vector。
+DEFAULT_RETRIEVAL = os.environ.get("KB_RETRIEVAL", "hybrid")
+RRF_K = 60
+
 # 各分块策略的默认参数（build_chunker 未显式传参时使用）
 CHUNKER_OPTS = {
     "fixed": {"size": CHUNK_SIZE, "overlap": CHUNK_OVERLAP},

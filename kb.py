@@ -13,6 +13,7 @@ from rag import embedding as _embedding
 from rag import llm as _llm
 from rag import config as _config
 from rag.chunkers import build_chunker as _build_chunker
+from rag.retrievers import RETRIEVERS as _RETRIEVERS
 
 # 采集 / 解析
 fetch_url_text = _ingest.fetch_url_text
@@ -31,6 +32,10 @@ EMBED_DIM = _config.EMBED_DIM
 EMBED_MODEL = _config.EMBED_MODEL
 CHAT_MODEL = _config.CHAT_MODEL
 
+# 检索策略（供后台下拉框/入参校验使用）
+RETRIEVAL_OPTIONS = _RETRIEVERS.names()
+DEFAULT_RETRIEVAL = _config.DEFAULT_RETRIEVAL
+
 
 def split_text(text):
     """向后兼容：等价于固定窗口分块（默认参数）。新代码请用 rag.chunkers。"""
@@ -41,4 +46,5 @@ __all__ = [
     "KnowledgeStore", "fetch_url_text", "looks_like_nav_page", "extract_pdf_text",
     "embed_texts", "chat", "split_text",
     "CHUNK_SIZE", "CHUNK_OVERLAP", "TOP_K", "EMBED_DIM", "EMBED_MODEL", "CHAT_MODEL",
+    "RETRIEVAL_OPTIONS", "DEFAULT_RETRIEVAL",
 ]

@@ -11,6 +11,7 @@ Slice 1 说明：本文件把旧 kb.py 的 KnowledgeStore 原样搬来，只做�
 """
 import os
 import json
+import logging
 import threading
 import secrets
 from datetime import datetime
@@ -20,8 +21,11 @@ import faiss
 
 from . import config
 from .chunkers import build_chunker
+from .retrievers import build_retriever, BM25Retriever
 from .embedding import embed_texts
 from .llm import chat
+
+logger = logging.getLogger(__name__)
 
 TOP_K = config.TOP_K
 EMBED_DIM = config.EMBED_DIM
@@ -82,6 +86,10 @@ class KnowledgeStore:
             except Exception:
                 self.index = None
 
+        # BM25 索引缓存（惰性构建，chunk/审核状态变化时置脏重建）
+        self._bm25_cache = None
+        self._bm25_dirty = True
+
     # ---------- 持久化 ----------
 
     def _persist_meta(self):
@@ -135,6 +143,7 @@ class KnowledgeStore:
             self.docs.append(doc)
             if status == "approved":
                 self._embed_doc_locked(doc)
+            self._bm25_dirty = True
             self._persist_docs()
             self._persist_chunks()
             self._persist_meta()
@@ -193,6 +202,7 @@ class KnowledgeStore:
             doc["status"] = "approved"
             doc["approved_at"] = datetime.now().isoformat()
             self._embed_doc_locked(doc)
+            self._bm25_dirty = True
             self._persist_docs()
             self._persist_index()
             return doc
@@ -203,6 +213,7 @@ class KnowledgeStore:
             if not doc:
                 raise RuntimeError("文档不存在")
             doc["status"] = "rejected"
+            self._bm25_dirty = True
             self._persist_docs()
             return doc
 
@@ -215,6 +226,7 @@ class KnowledgeStore:
             self.docs = [d for d in self.docs if d["id"] != doc_id]
             for cid in doc.get("chunk_ids", []):
                 self.chunks.pop(cid, None)
+            self._bm25_dirty = True
             self._persist_docs()
             self._persist_chunks()
             self._persist_index()
@@ -232,36 +244,87 @@ class KnowledgeStore:
 
     # ---------- 检索与问答 ----------
 
-    def search(self, query, top_k=TOP_K):
-        """返回 [{score, text, doc}]，按余弦相似度降序。"""
+    def _vector_rank_locked(self, query, top_k):
+        """纯向量召回，返回 [{'id','score'}]（只含 approved）。调用方需已持锁。"""
+        if self.index is None or self.index.ntotal == 0:
+            return []
+        qvec = embed_texts([query])
+        k = min(top_k, self.index.ntotal)
+        scores, ids = self.index.search(qvec, k)
+        out = []
+        for score, cid in zip(scores[0], ids[0]):
+            if cid == -1:
+                continue
+            ch = self.chunks.get(str(int(cid)))
+            if not ch:
+                continue
+            doc = self.get_doc(ch["doc_id"]) or {}
+            if doc.get("status") != "approved":
+                continue
+            out.append({"id": str(int(cid)), "score": float(score)})
+        return out
+
+    def _get_bm25_locked(self):
+        """返回缓存的 BM25Retriever（语料=已 approved 块）；缺依赖或无内容返回 None。"""
+        if self._bm25_cache is not None and not self._bm25_dirty:
+            return self._bm25_cache
+        corpus = {
+            cid: ch["text"] for cid, ch in self.chunks.items()
+            if (self.get_doc(ch["doc_id"]) or {}).get("status") == "approved"
+        }
+        try:
+            self._bm25_cache = BM25Retriever(corpus) if corpus else None
+        except ImportError:
+            logger.warning("缺少 jieba / rank_bm25，BM25 不可用，检索回退纯向量")
+            self._bm25_cache = None
+        except Exception as e:  # pragma: no cover
+            logger.warning("BM25 索引构建失败：%s（回退纯向量）" % e)
+            self._bm25_cache = None
+        self._bm25_dirty = False
+        return self._bm25_cache
+
+    def search(self, query, top_k=TOP_K, retrieval=None):
+        """按所选检索策略召回，返回 [{'score','text','doc','retrieval'}]。
+
+        retrieval: vector | bm25 | hybrid（默认 config.DEFAULT_RETRIEVAL）。
+        bm25/hybrid 在缺依赖时自动降级为 vector，不报错。
+        """
+        name = retrieval or config.DEFAULT_RETRIEVAL
         with self.lock:
-            if self.index is None or self.index.ntotal == 0:
-                return []
-            qvec = embed_texts([query])
-            k = min(top_k, self.index.ntotal)
-            scores, ids = self.index.search(qvec, k)
+            bm = None
+            if name in ("bm25", "hybrid"):
+                bm = self._get_bm25_locked()
+                if bm is None:
+                    name = "vector"
+            vec_fn = self._vector_rank_locked
+            retriever = build_retriever(name, vec_search=vec_fn, bm25=bm, k=config.RRF_K)
+            ranked = retriever.search(query, top_k)
             hits = []
-            for score, cid in zip(scores[0], ids[0]):
-                if cid == -1:
-                    continue
-                ch = self.chunks.get(str(int(cid)))
+            for item in ranked:
+                ch = self.chunks.get(str(item["id"]))
                 if not ch:
                     continue
                 doc = self.get_doc(ch["doc_id"]) or {}
-                if doc.get("status") != "approved":
-                    continue
-                hits.append({"score": float(score), "text": ch["text"], "doc": doc})
+                hits.append({
+                    "score": item["score"], "text": ch["text"], "doc": doc,
+                    "retrieval": name,
+                })
             return hits
 
-    def ask(self, question):
-        """RAG 问答：检索 top-k -> 拼 prompt -> qwen-plus 生成。"""
+    def ask(self, question, retrieval=None):
+        """RAG 问答：按检索策略召回 top-k -> 拼 prompt -> qwen-plus 生成。
+
+        返回值含 retrieval：实际生效的检索策略（bm25/hybrid 缺依赖会降级为 vector）。
+        """
         if not question or not question.strip():
             raise RuntimeError("问题不能为空")
-        hits = self.search(question)
+        hits = self.search(question, retrieval=retrieval)
+        used = hits[0]["retrieval"] if hits else (retrieval or config.DEFAULT_RETRIEVAL)
         if not hits:
             return {
                 "answer": "知识库中暂无与该问题相关的内容。管理员可在后台上传资料或从友情链接采集行业信息后再次提问。",
                 "sources": [],
+                "retrieval": used,
             }
         ctx = "\n\n".join(
             "【资料%d】%s\n%s" % (i + 1, h["doc"].get("title", ""), h["text"])
@@ -289,7 +352,7 @@ class KnowledgeStore:
                 "url": doc.get("url", ""),
                 "snippet": h["text"][:160],
             })
-        return {"answer": answer, "sources": sources}
+        return {"answer": answer, "sources": sources, "retrieval": used}
 
     # ---------- 友情链接 ----------
 

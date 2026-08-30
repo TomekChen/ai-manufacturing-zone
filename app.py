@@ -366,7 +366,7 @@ def api_kb_upload():
 
 @app.route("/api/kb/ask", methods=["POST"])
 def api_kb_ask():
-    """知识库问答：FAISS 检索 + 百炼 LLM 生成。"""
+    """知识库问答：可插拔检索（向量/BM25/混合）+ 百炼 LLM 生成。"""
     if rate_limited(request.remote_addr, limit=10, window=60):
         return jsonify({"error": "提问太频繁，请稍后再试"}), 429
     payload = request.get_json(force=True, silent=True) or {}
@@ -375,8 +375,11 @@ def api_kb_ask():
         return jsonify({"error": "请输入问题"}), 400
     if len(question) > 500:
         return jsonify({"error": "问题太长（最多 500 字）"}), 400
+    retrieval = (payload.get("retrieval") or "").strip() or None
+    if retrieval is not None and retrieval not in kb.RETRIEVAL_OPTIONS:
+        retrieval = None  # 非法值交回默认策略，避免注入未知检索名
     try:
-        result = KB.ask(question)
+        result = KB.ask(question, retrieval=retrieval)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 502
     except Exception as e:

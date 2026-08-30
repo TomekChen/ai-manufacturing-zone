@@ -503,3 +503,43 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 
 **部署状态**：仍未上线阿里云，全程本地 F 盘 + PyCharm 验证。本轮属纯结构重构，风险低；
 建议老板在 PyCharm 里跑一遍现有问答确认无回归后，再继续 Slice 2。
+
+---
+
+## 十三、第十轮：检索层可插拔（向量 / BM25 / 混合 + 提问时选检索方式）
+
+**目标（Slice 2）**：把「检索」从旧 kb 里写死的纯向量，抽成和分块一样的可插拔策略，
+让管理员**提问时**就能在向量 / BM25 / 混合之间切换对比，且切换是秒级的（不重跑 embedding、不重建索引）。
+
+**本轮做了什么**：
+- 新建 `rag/retrievers/` 子包，沿用 Slice 1 的注册表模式：
+  - `base.py`：`Retriever` 接口 + `RETRIEVERS` 注册表；
+  - `vector.py`：`VectorRetriever`，把原 `_vector_rank_locked`（FAISS 相似度）包成一个策略；
+  - `bm25.py`：`BM25Retriever`，用 `jieba` 分词 + `rank_bm25.BM25Okapi` 建关键词索引；
+  - `hybrid.py`：`HybridRetriever`，向量与 BM25 各取 top_n×2 召回，再用 Slice 1 的 `reciprocal_rank_fusion`（k=60）融合排名；
+  - `__init__.py`：`build_retriever(name, *, vec_search, bm25, k)` 工厂，**加一种检索 = 注册一个类 + 工厂加一个分支，主流程 store 不动**。
+- `rag/store.py` 接入：
+  - 新增 BM25 缓存 `_bm25_cache / _bm25_dirty`，文档增删改时置脏，下次检索懒重建（避免每次问答都重算全库 BM25）；
+  - `_vector_rank_locked`（拆出的纯向量排名）、`_get_bm25_locked`（建/取 BM25 缓存，**缺 jieba/rank_bm25 或建索引失败时打日志并降级为纯向量，不抛错**）；
+  - `search(query, top_k, retrieval=None)` 按名选策略，命中项带 `retrieval` 标注实际生效策略；`ask` 同步透传并把生效策略回给调用方。
+  - 默认策略 `hybrid`（`config.DEFAULT_RETRIEVAL`，可用环境变量 `KB_RETRIEVAL` 覆盖）。
+- `app.py` `/api/kb/ask`：接收可选 `retrieval` 入参，**在信任边界按注册表白名单校验**（非法值退回默认，防注入未知策略名）；
+  `kb.py` 薄兼容层再导出 `RETRIEVAL_OPTIONS / DEFAULT_RETRIEVAL` 供前台下拉与校验取用。**`app.py` 其余路由零改**。
+
+**测试（离线确定性）**：
+- `tests/test_rag_unit.py` 仍 11/11（回归不受影响）。
+- 新增 `tests/test_rag_retrieval.py` 9/9：BM25 关键词命中（"茅台 营业收入"→茅台、"研发费用"→宁德、分数降序、无匹配返回空、遵守 top_k）；
+  混合 RRF（用假向量+假BM25手算融合序 a>c>b>d、两路并集、top_k 截断）；检索注册表 names。
+- 端到端集成（注入假 faiss/bs4 + 假零向量嵌入绕开联网）：`search(...,retrieval="bm25")` 与 `retrieval="hybrid"`
+  均命中正确文档且 `retrieval` 标注正确；**FAISS 索引为空时 hybrid 自动只走 BM25、不报错**（降级链路验证通过）。
+
+**踩坑**：
+- `KB_RAG` 早期把检索写死在 `KnowledgeStore.search` 里；本轮把「选哪个策略」和「策略怎么算」分离——store 只管装配原料（向量排名函数、BM25 实例），
+  retriever 只管排名，便于单测里塞假原料、也便于以后加 rerank。
+- 验证时发现 2 篇文档的小语料下 BM25 分数恒为 0——这是 `rank_bm25` 的 idf 在极小语料上的固有退化（词只出现在半数文档时 idf=0），**非代码 bug**；
+  换成 4 篇正常语料分数即恢复，真实测试用例即用 4 篇。
+
+**依赖变化**：`rank_bm25`、`jieba` 本轮正式启用，需补进 `requirements`（部署时容器内 `pip install`）。
+
+**部署状态**：仍未上线阿里云。KB 整个功能（含这两轮重构）只活在本地 F 盘，服务器仍是旧的、不含知识库问答的 `app.py`。
+建议老板在 PyCharm 跑通问答 + 后台切检索方式无异常后再继续；前端「后台下拉选检索方式」属 Slice 2 收尾，需 `npx vite build`，下一步再定。
