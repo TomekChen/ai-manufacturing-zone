@@ -602,7 +602,18 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - 端点冒烟（Flask test_client，临时库不碰真实 data/）：options 返回 fixed/semantic + vector/bm25/hybrid；
   一篇 fixed(2块) 换 semantic 重建→1 块且 `re_sharded=True`；全库重建 vectors 与 approved 块数一致；非法 chunking 退回默认不报错；未带 token 一律 401。
 
-**尚未做（前端，Slice 2+3 合并收尾）**：后台「入库选分块方式」下拉、「单篇重建/换策略」按钮、「全库重建」确认弹窗（提示会重花 embedding 额度）、
-以及 Slice 2 的「检索方式」下拉——都要 `npx vite build`。后端接口（含 options）已就绪，前端接上即可。建议一次前端 pass 把 2、3 的 UI 一起补齐并只 build 一次。
+**前端收尾（Slice 2+3 合并，一轮做完）**：后台 UI 一次补齐并只 `npm run build` 一次——
+- `src/AdminKB.jsx` 重写：进入页面先 `GET /api/admin/kb/options` 拉可选项，**分块 / 检索下拉全部数据驱动，不再硬编码策略名**；
+- 「问答调试」面板：选检索方式（vector/bm25/hybrid）→ 调 `/api/kb/ask` → 显示答案 + 参考来源 + 「本次实际检索」标签（读接口回的 `retrieval`，验证退化是否生效）；
+- 采集行加「分块方式」下拉（fixed/semantic），采集时随 body 带上 `chunking`；
+- 文档表加「分块」列显示每篇记录的策略；每行加「换策略重建」下拉 + 「重建」按钮（单篇 `POST /docs/<id>/rebuild`），工具栏加「全库重建」按钮（`POST /rebuild`，二次确认提示会重花 embedding 额度）；
+- 策略中文名在前端集中映射（`CHUNK_LABEL`/`RETR_LABEL`），未知 key 直接原样显示，容错。
+- `src/style.css` 补 `.kb-debug*` / `.kb-tag` / `.kb-rebuild-select` / `.kb-crawl-row select` 等样式，全部复用既有 CSS 变量（surface-2/hairline/radius/ink/accent…），不引新色值。
 
-**部署状态**：仍未上阿里云；`kb_raw.json` 是新数据文件，部署时容器内 data 卷会自动生成，老库首次「全库重建」会把没原文的历史篇按原块保留。
+**构建与验证**：`npm run build` 成功（39 模块），产物 `dist/assets/index-*.js` 已含新增串（`admin/kb/rebuild`、`换策略重建`、`问答调试`、`固定窗口`、`语义分块`）。
+用假 faiss + 假 bs4 + 假嵌入起完整 Flask 栈冒烟：静态资源 200、`/api/kb/ask`（bm25 / 非法 retrieval）均 200、`options` 返回 `chunking:[fixed,semantic] retrieval:[vector,bm25,hybrid]` 及默认值。
+> 注：Windows 本机 `.js` 的 MIME 注册成 `text/plain`（浏览器按内容仍可执行，Linux 部署为 `application/javascript`），冒烟只验状态码 + 产物字节数 + bundle 含新码，不因该 MIME 差异判失败。
+
+**至此 Slice 1/2/3 全部完成（后端 + 前端 + 测试），无遗留。** 下一切片：Slice 4 在线问答看板（`telemetry.py` + 👍/👎 反馈接口 + 后台分析页）。
+
+**部署状态**：仍未上阿里云；`kb_raw.json` 是新数据文件，部署时容器内 data 卷会自动生成，老库首次「全库重建」会把没原文的历史篇按原块保留。前端 `dist/` 为 gitignore 构建产物，未入库。
