@@ -617,3 +617,37 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **至此 Slice 1/2/3 全部完成（后端 + 前端 + 测试），无遗留。** 下一切片：Slice 4 在线问答看板（`telemetry.py` + 👍/👎 反馈接口 + 后台分析页）。
 
 **部署状态**：仍未上阿里云；`kb_raw.json` 是新数据文件，部署时容器内 data 卷会自动生成，老库首次「全库重建」会把没原文的历史篇按原块保留。前端 `dist/` 为 gitignore 构建产物，未入库。
+
+---
+
+## 十六、第十三轮：在线问答看板（Slice 4，D5-a 落地，零 token）
+
+**目标**：把真实问答流量记下来并聚合成看板，让管理员**不花额度**就能看到「问了多少、哪些答不上、哪种检索更稳、用户满不满意」，据此补知识库缺口或换策略（SPEC §3.3 US-20~24、§四 1–4、§五 Seam S4）。
+
+**关键设计取舍**：
+- **聚合写成纯函数** `summarize(records, days, now)`——不读盘、不碰网络/LLM，`now` 可注入，因此 Seam S4 能喂合成日志做确定性断言（拒绝率/命中率/各策略分组/未答清单计数/趋势铺桶/边界口径）。落盘与写反馈留给 `Telemetry` 类，另用临时目录小测覆盖「滚动上限丢最旧」「反馈写回」。
+- **「相似度」诚实处理**：`top_score` 是**当前策略返回的首位原始分数**，vector≈余弦、bm25 无界、hybrid 是 RRF 融合值（量纲不同，跨策略不可直接比）。故看板只在**同一策略内**用平均分看趋势（UI 标成「平均最高分」且仅显示数值），顶部数字卡改用**策略无关**的指标：总问数 / 拒绝率 / 👍率 / 平均命中数。避免拿 0.016 和 0.8 摆一起误导。
+- **遥测绝不能拖垮问答**：`store.ask` 里 `_log_ask` 用 try/except 包住，写失败只 warning，照常返回答案。遥测用独立文件 `kb_telemetry.json` + 自己的锁，和文档锁解耦；体量小（上限默认 5000 条），沿用项目既有「文件型 + 全量读改写」风格，不引 DB。
+- **反馈用 ask_id 关联**：每次 `ask` 生成 `ask_id` 随答案返回；前台 👍/👎 打 `POST /api/kb/feedback{ask_id,rating}` 写回对应记录。反馈是公开接口（访客也能点），故限流 + 校验 rating 归一 + ask_id 必须存在（否则 404），同一条只记一次。
+
+**本轮做了什么**：
+- 后端：
+  - 新增 `rag/telemetry.py`：`summarize` 纯聚合 + `Telemetry`（`record`/`set_feedback`/`aggregate`，滚动上限 `config.TELEM_MAX`）+ `normalize_question`（未答清单去重归一）。
+  - `rag/config.py` 加 `TELEM_MAX`(5000)、`TELEM_TREND_DAYS`(30)（可 env 覆盖）；`kb.py` 兼容层再导出 `TELEM_TREND_DAYS`。
+  - `rag/store.py`：`__init__` 建 `self.telemetry`；`ask()` 计时、取 top_score/命中数/是否拒答、生成 `ask_id`、落一条日志并回传 `ask_id`（两条返回路径都带）。
+  - `app.py`：`POST /api/kb/feedback`（公开👍👎）、`GET /api/admin/kb/analytics?days=`（`@require_admin`，days 夹在 1–90）。
+- 前端：
+  - `src/KnowledgeQA.jsx`：答案下加 👍/👎，点一次记一次并回填 `feedback` 状态（已反馈显示「感谢你的反馈」）。
+  - 新增 `src/AdminAnalytics.jsx`：顶部数字卡（带轻量 count-up 补间）、各策略并排 CSS 条形对比、问答量趋势（内联 SVG 折线+面积，近 7/14/30 天切换）、未命中问题清单（按频次降序表格）。**零图表库**（§四 决定：几根条用不上重库，且本机装库有坑）。
+  - `src/main.jsx` 后台加「问答分析」标签页；`src/style.css` 补 `.qa-feedback*` 与 `.an-*`，全部复用既有设计令牌（surface/hairline/ink/accent/success/warning），不引新色值、暗色一致。
+- `.gitignore` 加 `data/kb_telemetry.json`。
+
+**测试与验证**：
+- 新增 `tests/test_rag_telemetry.py` **10/10**（Seam S4，纯离线确定性）：总量与各率、窗口过滤与 7 天边界口径、按策略分组（含 avg_top_score 只算非空、up/down 计数）、未答清单归一化去重与频次降序、趋势铺满 N 天且日期升序、空输入安全、文件滚动丢最旧、set_feedback 命中/未命中。
+- 回归：`test_rag_unit` 11/11、`test_rag_retrieval` 9/9、`test_rag_rebuild` 6/6 仍全过（合计 **36/36**）。
+- 全栈冒烟（假 faiss/bs4/嵌入/LLM）：①store↔telemetry——ask 回传 `ask_id` 且落一条含全字段的记录、未命中记 `refused=True`/`top_score=None`、👍 写回、aggregate 反映 total/feedback_up/趋势 30 桶/未答计数；②端点——analytics 无 token 401、带 token 200 且 `days=14` 生效、feedback 未知 id 404 / 非法 rating 400 / 缺 id 400，且不写真实 data。
+- `npm run build` 成功（40 模块，`dist/assets/index-*.js` 219.81 kB、css 48.03 kB），产物含新看板与反馈代码。
+
+**至此 Slice 4 完成（后端+前端+测试），无遗留。** 下一切片：Slice 5 离线 RAGAS-lite 评测（内置小标准题集 + 手动「重跑评测」才花 token + 四指标横向对比 + 可选真实问答抽样裁判 + 后台评测卡 + Seam S5）。
+
+**部署状态**：仍未上阿里云；`kb_telemetry.json` 为新数据文件，容器 data 卷自动生成。公开 `/api/kb/feedback` 与既有 `/api/kb/ask` 同属免鉴权前台接口，靠限流兜底。

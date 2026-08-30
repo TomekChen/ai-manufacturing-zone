@@ -41,6 +41,9 @@ DEFAULT_RETRIEVAL = _config.DEFAULT_RETRIEVAL
 CHUNKING_OPTIONS = _CHUNKERS.names()
 DEFAULT_CHUNKING = _config.DEFAULT_CHUNKING
 
+# 问答看板（Slice 4）：趋势默认统计天数
+TELEM_TREND_DAYS = _config.TELEM_TREND_DAYS
+
 
 def split_text(text):
     """向后兼容：等价于固定窗口分块（默认参数）。新代码请用 rag.chunkers。"""
@@ -53,4 +56,5 @@ __all__ = [
     "CHUNK_SIZE", "CHUNK_OVERLAP", "TOP_K", "EMBED_DIM", "EMBED_MODEL", "CHAT_MODEL",
     "RETRIEVAL_OPTIONS", "DEFAULT_RETRIEVAL",
     "CHUNKING_OPTIONS", "DEFAULT_CHUNKING",
+    "TELEM_TREND_DAYS",
 ]

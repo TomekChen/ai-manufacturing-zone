@@ -11,6 +11,7 @@ Slice 1 说明：本文件把旧 kb.py 的 KnowledgeStore 原样搬来，只做�
 """
 import os
 import json
+import time
 import logging
 import threading
 import secrets
@@ -24,6 +25,7 @@ from .chunkers import build_chunker
 from .retrievers import build_retriever, BM25Retriever
 from .embedding import embed_texts
 from .llm import chat
+from .telemetry import Telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,9 @@ class KnowledgeStore:
         # BM25 索引缓存（惰性构建，chunk/审核状态变化时置脏重建）
         self._bm25_cache = None
         self._bm25_dirty = True
+
+        # 问答遥测（Slice 4）：日志落盘 + 看板聚合，独立于文档锁，写失败不影响问答
+        self.telemetry = Telemetry(data_dir)
 
     # ---------- 持久化 ----------
 
@@ -426,21 +431,41 @@ class KnowledgeStore:
                 })
             return hits
 
+    def _log_ask(self, ask_id, question, retrieval, hits, top_score, refused, answer, t0):
+        """记录一条问答遥测（Slice 4）。任何异常都吞掉——遥测绝不能拖垮正常回答。"""
+        try:
+            self.telemetry.record({
+                "id": ask_id,
+                "ts": datetime.now().isoformat(),
+                "question": (question or "").strip()[:200],
+                "retrieval": retrieval,
+                "hits": hits,
+                "top_score": top_score,
+                "refused": refused,
+                "answer_len": len(answer or ""),
+                "latency_ms": int((time.perf_counter() - t0) * 1000),
+                "feedback": None,
+            })
+        except Exception:
+            logger.warning("问答遥测记录失败（不影响回答）", exc_info=True)
+
     def ask(self, question, retrieval=None):
         """RAG 问答：按检索策略召回 top-k -> 拼 prompt -> qwen-plus 生成。
 
-        返回值含 retrieval：实际生效的检索策略（bm25/hybrid 缺依赖会降级为 vector）。
+        返回值含 retrieval（实际生效策略，bm25/hybrid 缺依赖会降级为 vector）
+        与 ask_id（供前端 👍/👎 反馈回填遥测）。每次提问落一条看板日志。
         """
         if not question or not question.strip():
             raise RuntimeError("问题不能为空")
+        t0 = time.perf_counter()
         hits = self.search(question, retrieval=retrieval)
         used = hits[0]["retrieval"] if hits else (retrieval or config.DEFAULT_RETRIEVAL)
+        top_score = round(hits[0]["score"], 4) if hits else None
+        ask_id = secrets.token_hex(8)
         if not hits:
-            return {
-                "answer": "知识库中暂无与该问题相关的内容。管理员可在后台上传资料或从友情链接采集行业信息后再次提问。",
-                "sources": [],
-                "retrieval": used,
-            }
+            answer = "知识库中暂无与该问题相关的内容。管理员可在后台上传资料或从友情链接采集行业信息后再次提问。"
+            self._log_ask(ask_id, question, used, 0, None, True, answer, t0)
+            return {"answer": answer, "sources": [], "retrieval": used, "ask_id": ask_id}
         ctx = "\n\n".join(
             "【资料%d】%s\n%s" % (i + 1, h["doc"].get("title", ""), h["text"])
             for i, h in enumerate(hits)
@@ -467,7 +492,8 @@ class KnowledgeStore:
                 "url": doc.get("url", ""),
                 "snippet": h["text"][:160],
             })
-        return {"answer": answer, "sources": sources, "retrieval": used}
+        self._log_ask(ask_id, question, used, len(hits), top_score, False, answer, t0)
+        return {"answer": answer, "sources": sources, "retrieval": used, "ask_id": ask_id}
 
     # ---------- 友情链接 ----------
 

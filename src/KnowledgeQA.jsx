@@ -42,11 +42,29 @@ export default function KnowledgeQA() {
       });
       if (!res.ok) throw new Error(await readError(res));
       const data = await res.json();
-      setMessages((m) => [...m, { role: 'assistant', text: data.answer, sources: data.sources || [] }]);
+      setMessages((m) => [...m, {
+        role: 'assistant', text: data.answer, sources: data.sources || [],
+        ask_id: data.ask_id, feedback: null,
+      }]);
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', error: true, text: err?.message || '问答失败，请稍后再试' }]);
     } finally {
       setAsking(false);
+    }
+  };
+
+  const sendFeedback = async (index, rating) => {
+    const msg = messages[index];
+    if (!msg || msg.feedback || !msg.ask_id) return; // 一次问答只记一次
+    setMessages((m) => m.map((x, i) => (i === index ? { ...x, feedback: rating } : x)));
+    try {
+      await fetch(`${API_BASE}/kb/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ask_id: msg.ask_id, rating }),
+      });
+    } catch {
+      /* 反馈失败静默，不打扰用户 */
     }
   };
 
@@ -125,6 +143,19 @@ export default function KnowledgeQA() {
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {msg.role === 'assistant' && !msg.error && msg.ask_id && (
+                    <div className="qa-feedback">
+                      {msg.feedback ? (
+                        <span className="qa-feedback-done">感谢你的反馈</span>
+                      ) : (
+                        <>
+                          <span className="qa-feedback-tip">这个回答有帮助吗？</span>
+                          <button className="qa-feedback-btn" title="有帮助" onClick={() => sendFeedback(i, 'up')}>👍</button>
+                          <button className="qa-feedback-btn" title="没帮助" onClick={() => sendFeedback(i, 'down')}>👎</button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

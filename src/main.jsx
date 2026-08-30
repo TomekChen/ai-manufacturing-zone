@@ -6,6 +6,7 @@ import KnowledgeQA from './KnowledgeQA';
 import LinkFooter from './LinkFooter';
 import AdminKB from './AdminKB';
 import AdminLinks from './AdminLinks';
+import AdminAnalytics from './AdminAnalytics';
 
 const API_BASE = '/api';
 
@@ -376,6 +377,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
         <div className="admin-tabs">
           <button className={activeTab === 'projects' ? 'active' : ''} onClick={() => setActiveTab('projects')}>项目管理</button>
           <button className={activeTab === 'kb' ? 'active' : ''} onClick={() => setActiveTab('kb')}>知识库管理</button>
+          <button className={activeTab === 'analytics' ? 'active' : ''} onClick={() => setActiveTab('analytics')}>问答分析</button>
           <button className={activeTab === 'links' ? 'active' : ''} onClick={() => setActiveTab('links')}>友情链接</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
@@ -417,6 +419,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
             </>
           )}
           {activeTab === 'kb' && <AdminKB token={token} />}
+          {activeTab === 'analytics' && <AdminAnalytics token={token} />}
           {activeTab === 'links' && <AdminLinks token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">

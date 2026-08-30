@@ -26,6 +26,10 @@ CHUNKER_OPTS = {
     "semantic": {"max_size": SEMANTIC_MAX, "min_size": SEMANTIC_MIN, "overlap": CHUNK_OVERLAP},
 }
 
+# 在线问答看板（Slice 4）：日志滚动上限（超限丢最旧）+ 趋势默认统计天数
+TELEM_MAX = int(os.environ.get("KB_TELEM_MAX", "5000"))
+TELEM_TREND_DAYS = int(os.environ.get("KB_TELEM_DAYS", "30"))
+
 
 def chunker_opts(name):
     return dict(CHUNKER_OPTS.get(name, {}))

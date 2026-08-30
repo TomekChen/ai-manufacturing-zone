@@ -397,6 +397,32 @@ def api_kb_ask():
     return jsonify(result)
 
 
+@app.route("/api/kb/feedback", methods=["POST"])
+def api_kb_feedback():
+    """前台对某次回答点 👍/👎，写回对应问答遥测（Slice 4）。公开接口，仅需合法 ask_id。"""
+    if rate_limited(request.remote_addr, limit=30, window=60):
+        return jsonify({"error": "操作太频繁，请稍后再试"}), 429
+    payload = request.get_json(force=True, silent=True) or {}
+    ask_id = (payload.get("ask_id") or "").strip()
+    raw = (payload.get("rating") or "").strip().lower()
+    # 宽容接收多种写法，最终归一到 up/down
+    if raw in ("up", "1", "like", "good", "thumb_up", "thumbup"):
+        rating = "up"
+    elif raw in ("down", "0", "-1", "dislike", "bad", "thumb_down", "thumbdown"):
+        rating = "down"
+    else:
+        return jsonify({"error": "反馈参数不合法"}), 400
+    if not ask_id:
+        return jsonify({"error": "缺少问答标识"}), 400
+    try:
+        ok = KB.telemetry.set_feedback(ask_id, rating)
+    except Exception as e:
+        return jsonify({"error": "反馈失败：%s" % str(e)[:120]}), 500
+    if not ok:
+        return jsonify({"error": "问答记录不存在或已过期"}), 404
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/kb/docs", methods=["GET"])
 @require_admin
 def api_admin_kb_docs():
@@ -523,6 +549,22 @@ def api_admin_kb_rebuild_doc(doc_id):
         "doc": result["doc"], "stats": KB.stats(), "re_sharded": result["re_sharded"],
         "message": "单篇重建完成：%d 块" % result["chunks"],
     })
+
+
+@app.route("/api/admin/kb/analytics", methods=["GET"])
+@require_admin
+def api_admin_kb_analytics():
+    """问答看板聚合（Slice 4）：总量/拒绝率/各策略对比/时间趋势/👍👎/未命中清单。"""
+    try:
+        days = int(request.args.get("days") or kb.TELEM_TREND_DAYS)
+    except (TypeError, ValueError):
+        days = kb.TELEM_TREND_DAYS
+    days = max(1, min(90, days))
+    try:
+        data = KB.telemetry.aggregate(days=days)
+    except Exception as e:
+        return jsonify({"error": "统计失败：%s" % str(e)[:120]}), 500
+    return jsonify(data)
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])
