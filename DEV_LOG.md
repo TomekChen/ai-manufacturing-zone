@@ -463,3 +463,43 @@ ai-manufacturing-zone/
 目前**只在本地 F 盘，尚未部署到阿里云**——服务器仍跑旧的 308 行 `app.py`（没有知识库）。
 上线需要：本地 `npx vite build`（前端）→ 上传 `dist/` + `kb.py` + `app.py` → 镜像装 `faiss-cpu / beautifulsoup4 / pypdf` →
 `.env` 配 `DASHSCOPE_API_KEY` → `docker compose up -d --build`。建议先在 PyCharm 本地跑通再部署。
+
+
+---
+
+## 十二、第九轮：RAG 模块拆分（单文件 kb.py → rag/ 可插拔包）
+
+**需求来源**：老板问「智能制造源码有没有用工厂模式」+「把 rag 代码拆一下，不要一个 kb.py 就是一整个模块」。
+核查结论：智能制造源码（`app.py` + 旧 `kb.py`）**没用工厂/策略模式**，旧 `kb.py` 是一个巨型 `KnowledgeStore` 类
+把存储、切块、嵌入、检索、生成、采集、友链全包在一起，切块只有单一 `split_text`、检索只有纯向量，加新策略就得改主流程。
+
+**方法论**：先用 disciplined-engineering 对齐需求（复用边界 / 分块生效粒度 / 检索时机 / v1 范围 / 指标类型 / 裁判触发），
+达成共识写进 `KB_RAG_REFACTOR_SPEC.md`；再用 TDD 红→绿实现纯逻辑；ponytail 保证不投机抽象（retriever/reranker 等
+真实 seam 等到需要第二个实现时再建，本轮不预先塞空壳）。
+
+**本轮做了什么（Slice 1：地基）**：
+- 新建 `rag/` 包，把旧 `kb.py` 按职责拆开：
+  - `rag/config.py` 配置与默认策略；`rag/embedding.py` 百炼请求+嵌入；`rag/llm.py` 生成；
+  - `rag/ingest.py` 网页/文档解析（`fetch_url_text`/`looks_like_nav_page`/`extract_pdf_text` 原样搬来）；
+  - `rag/store.py` = `KnowledgeStore`（旧逻辑，仅两处结构变化：切块走 chunker、嵌入/生成改为 import）。
+- 引入「注册表（轻量工厂）」：`rag/registry.py` 通用 `Registry`；
+  `rag/chunkers/` 下 `base.py`(接口+CHUNKERS 注册表) + `fixed.py`(FixedChunker，等价旧 split_text) + `semantic.py`(段落语义分块)，
+  `build_chunker(name, **opts)` 一个工厂函数搞定分块策略选择——**以后加分块策略 = 注册一个类，不动主流程**。
+- `rag/fusion.py`：RRF 融合，纯函数、独立可测（混合检索在 Slice 2 接入，本轮先把地基与用例测好）。
+- `kb.py` 改成**薄兼容层**：只做 `from rag.store import KnowledgeStore` 等再导出。→ **`app.py` 一行未改**，
+  `import kb` 照旧可用（已 `py_compile` + 注入假依赖跑通整条 import 链验证）。
+
+**测试（离线确定性，不碰网络/LLM/FAISS）**：`tests/test_rag_unit.py` 11 条断言全过——
+S1 RRF（期望值按 1/(k+rank) 手算：b>a>c）；S2 固定窗口（空/短文/滑动计数 [0:100][80:180][160:250]/句读回缩不吞字）；
+语义分块（短段合并/超长段回落固定窗口/短文单块）；注册表（names + 未知策略抛 KeyError）。
+默认策略 `fixed` 且参数(600/80)与旧 `split_text` 一致 → **本轮问答行为零变化**。
+
+**尚未做（留给后续切片，见 SPEC §六）**：Slice 2 检索层 retriever 抽象 + BM25/混合 + 提问时选检索方式；
+Slice 3 入库逐文档选分块 + 全库重建；Slice 4 在线问答看板（拒绝率/各策略对比/未答清单/👍👎）；
+Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
+
+**依赖变化**：新增纯 Python 轻依赖 `rank_bm25`、`jieba`（Slice 2 才真正用到，届时补进 requirements）。
+`faiss-cpu / beautifulsoup4 / pypdf` 沿用。
+
+**部署状态**：仍未上线阿里云，全程本地 F 盘 + PyCharm 验证。本轮属纯结构重构，风险低；
+建议老板在 PyCharm 里跑一遍现有问答确认无回归后，再继续 Slice 2。
