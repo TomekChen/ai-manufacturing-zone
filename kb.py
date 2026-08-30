@@ -13,6 +13,7 @@ from rag import embedding as _embedding
 from rag import llm as _llm
 from rag import config as _config
 from rag.chunkers import build_chunker as _build_chunker
+from rag.chunkers import CHUNKERS as _CHUNKERS
 from rag.retrievers import RETRIEVERS as _RETRIEVERS
 
 # 采集 / 解析
@@ -36,6 +37,10 @@ CHAT_MODEL = _config.CHAT_MODEL
 RETRIEVAL_OPTIONS = _RETRIEVERS.names()
 DEFAULT_RETRIEVAL = _config.DEFAULT_RETRIEVAL
 
+# 分块策略（供后台入库/重建下拉框与入参校验使用）
+CHUNKING_OPTIONS = _CHUNKERS.names()
+DEFAULT_CHUNKING = _config.DEFAULT_CHUNKING
+
 
 def split_text(text):
     """向后兼容：等价于固定窗口分块（默认参数）。新代码请用 rag.chunkers。"""
@@ -47,4 +52,5 @@ __all__ = [
     "embed_texts", "chat", "split_text",
     "CHUNK_SIZE", "CHUNK_OVERLAP", "TOP_K", "EMBED_DIM", "EMBED_MODEL", "CHAT_MODEL",
     "RETRIEVAL_OPTIONS", "DEFAULT_RETRIEVAL",
+    "CHUNKING_OPTIONS", "DEFAULT_CHUNKING",
 ]

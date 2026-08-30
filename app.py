@@ -86,6 +86,13 @@ def require_admin(fn):
     return wrapper
 
 
+def _clean_choice(raw, options):
+    """可选入参清洗：空 / 非法值 -> None（交回后端默认），合法值 -> 原样返回。
+    在信任边界挡住未知策略名，避免注入注册表里没有的 key。"""
+    v = (raw or "").strip()
+    return v if v in options else None
+
+
 def check_alive(url, timeout=15):
     """宽松心跳检测：服务只要能建立连接并返回非 5xx 状态即视为在线。"""
     if not url:
@@ -380,9 +387,7 @@ def api_kb_ask():
         return jsonify({"error": "请输入问题"}), 400
     if len(question) > 500:
         return jsonify({"error": "问题太长（最多 500 字）"}), 400
-    retrieval = (payload.get("retrieval") or "").strip() or None
-    if retrieval is not None and retrieval not in kb.RETRIEVAL_OPTIONS:
-        retrieval = None  # 非法值交回默认策略，避免注入未知检索名
+    retrieval = _clean_choice(payload.get("retrieval"), kb.RETRIEVAL_OPTIONS)
     try:
         result = KB.ask(question, retrieval=retrieval)
     except RuntimeError as e:
@@ -443,7 +448,7 @@ def api_admin_kb_delete(doc_id):
     return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
 
 
-def _crawl_to_kb(url, doc_type="url"):
+def _crawl_to_kb(url, doc_type="url", chunking=None):
     """抓取 URL 并直接以 approved 状态入库（管理员操作，视为已审核）。"""
     url = (url or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -454,7 +459,7 @@ def _crawl_to_kb(url, doc_type="url"):
     if kb.looks_like_nav_page(text):
         raise RuntimeError("抓到的内容像是网站首页/栏目列表（全是标题、没有正文），请粘贴具体文章的详情页地址")
     doc = KB.add_text(text, title=title or url, url=url,
-                      doc_type=doc_type, status="approved")
+                      doc_type=doc_type, status="approved", chunking=chunking)
     return doc
 
 
@@ -462,13 +467,62 @@ def _crawl_to_kb(url, doc_type="url"):
 @require_admin
 def api_admin_kb_crawl():
     payload = request.get_json(force=True, silent=True) or {}
+    chunking = _clean_choice(payload.get("chunking"), kb.CHUNKING_OPTIONS)
     try:
-        doc = _crawl_to_kb(payload.get("url"))
+        doc = _crawl_to_kb(payload.get("url"), chunking=chunking)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": "采集失败：%s" % str(e)[:160]}), 502
     return jsonify({"doc": doc, "message": "采集成功，已入库"})
+
+
+@app.route("/api/admin/kb/options", methods=["GET"])
+@require_admin
+def api_admin_kb_options():
+    """后台下拉框数据源：可选的分块/检索策略及默认值（单一事实来源=注册表，前端不再硬编码）。"""
+    return jsonify({
+        "chunking": kb.CHUNKING_OPTIONS,
+        "default_chunking": kb.DEFAULT_CHUNKING,
+        "retrieval": kb.RETRIEVAL_OPTIONS,
+        "default_retrieval": kb.DEFAULT_RETRIEVAL,
+    })
+
+
+@app.route("/api/admin/kb/rebuild", methods=["POST"])
+@require_admin
+def api_admin_kb_rebuild_all():
+    """全库重建：按各文档记录的分块策略重新切块 + 重嵌入（会重花 embedding 额度）。"""
+    try:
+        result = KB.rebuild_all()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        return jsonify({"error": "重建失败：%s" % str(e)[:160]}), 502
+    return jsonify({
+        "result": result, "stats": KB.stats(),
+        "message": "全库重建完成（共 %d 篇 / %d 块）" % (result["docs"], result["chunks"]),
+    })
+
+
+@app.route("/api/admin/kb/docs/<doc_id>/rebuild", methods=["POST"])
+@require_admin
+def api_admin_kb_rebuild_doc(doc_id):
+    """单篇重建：可选换分块策略后重新切块 + 重嵌入。"""
+    payload = request.get_json(force=True, silent=True) or {}
+    chunking = _clean_choice(payload.get("chunking"), kb.CHUNKING_OPTIONS)
+    try:
+        result = KB.rebuild_doc(doc_id, chunking=chunking)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except KeyError as e:
+        return jsonify({"error": "未知分块策略：%s" % str(e)[:80]}), 400
+    except Exception as e:
+        return jsonify({"error": "重建失败：%s" % str(e)[:160]}), 502
+    return jsonify({
+        "doc": result["doc"], "stats": KB.stats(), "re_sharded": result["re_sharded"],
+        "message": "单篇重建完成：%d 块" % result["chunks"],
+    })
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])

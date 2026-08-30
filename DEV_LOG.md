@@ -566,3 +566,43 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 
 **教训（写进 skill）**：抽东西前先分清「这是重复分支该上注册表/策略」还是「这只是重复样板该上装饰器/函数」。
 别把工厂模式当万金油——**没有"多态变体"就不要建抽象基类/注册表**，普通去重（鉴权、日志、限流、事务）用装饰器或工具函数更轻更准。
+
+---
+
+## 十五、第十二轮：逐文档选分块 + 重建（Slice 3，D2 落地）
+
+**目标**：让管理员**入库时逐篇选分块方式**（固定窗口 / 语义），策略随文档记录；并提供**单篇重建**（换策略重切重嵌）
+和**全库重建**（按各篇自己的策略整体重切重嵌）——这正是把 Slice 1 的 chunker 抽象用起来的地方。
+
+**关键设计发现（先想清楚再动手）**：要「换策略重新切块」，就必须留着**原始全文**。
+现有 `kb_chunks.json` 只存切好的块，而 fixed 分块带 80 字重叠，把块拼回去是**有损**的（重叠区会重复、分隔符丢失）。
+→ 因此新增一份 `kb_raw.json`（doc_id → 原始全文），入库时写、删除时清。这是重建的前提，不先想透这点会做出个拼不回去的重建。
+
+**本轮做了什么（后端）**：
+- `rag/store.py`：
+  - `add_text` 记录 `self.raw[doc_id]=全文` 并落盘；`delete` 同步清 raw；
+  - 新增 `rebuild_doc(doc_id, chunking=None)`：清旧块+旧向量 → 按新（或沿用原）策略重切 → approved 的重新嵌入。
+    **历史无原文的老文档**只能原样重嵌入、拒绝换策略（抛友好提示：请重新上传/采集），不硬拼残缺文本；
+  - 新增 `rebuild_all()`：逐篇按各自记录策略重切、从零重建 FAISS 索引，索引向量数 = 所有 approved 篇的块数之和（pending 不进索引）；
+  - 抽了两个共用小函数 `_new_chunk_ids`（分配自增块 id）、`_rechunk_locked`（切块+更新元数据），
+    让 add_text / rebuild_doc / rebuild_all 复用同一套「分配 id 写块」逻辑，不再各写一遍重复循环。
+- `kb.py` 兼容层再导出 `CHUNKING_OPTIONS / DEFAULT_CHUNKING`（取自 CHUNKERS 注册表，单一事实来源）。
+- `app.py`：
+  - `GET /api/admin/kb/options`：一次返回分块 + 检索的可选项与默认值，**前端下拉框改成读这个接口，不再硬编码策略名**；
+  - `POST /api/admin/kb/rebuild`（全库）与 `POST /api/admin/kb/docs/<id>/rebuild`（单篇，body 可选 `chunking`）；
+  - `/api/admin/kb/crawl` 采集时也可带 `chunking`；`_crawl_to_kb` 相应加参数透传；
+  - 抽 `_clean_choice(raw, options)` 小工具：可选入参「空/非法→退回默认、合法→原样」，
+    retrieval 与 chunking 两处共用（又是一处该抽函数、不该抽工厂的样板去重）。
+  - 默认全局 `DEFAULT_CHUNKING` 仍为 `fixed`（公开上传零回归）；管理员在后台按需选，语义分块作为可选项。
+
+**测试与验证**：
+- 新增 `tests/test_rag_rebuild.py` 6/6（注入假 faiss + 假嵌入，纯离线）：入库记录原文、单篇换策略重切且块 id 全重分配、
+  未知策略抛 KeyError、老文档缺原文拒绝换策略、全库重建索引向量数=approved 块数总和、老文档块被保留。
+- 回归：`test_rag_unit.py` 11/11、`test_rag_retrieval.py` 9/9 仍全过。
+- 端点冒烟（Flask test_client，临时库不碰真实 data/）：options 返回 fixed/semantic + vector/bm25/hybrid；
+  一篇 fixed(2块) 换 semantic 重建→1 块且 `re_sharded=True`；全库重建 vectors 与 approved 块数一致；非法 chunking 退回默认不报错；未带 token 一律 401。
+
+**尚未做（前端，Slice 2+3 合并收尾）**：后台「入库选分块方式」下拉、「单篇重建/换策略」按钮、「全库重建」确认弹窗（提示会重花 embedding 额度）、
+以及 Slice 2 的「检索方式」下拉——都要 `npx vite build`。后端接口（含 options）已就绪，前端接上即可。建议一次前端 pass 把 2、3 的 UI 一起补齐并只 build 一次。
+
+**部署状态**：仍未上阿里云；`kb_raw.json` 是新数据文件，部署时容器内 data 卷会自动生成，老库首次「全库重建」会把没原文的历史篇按原块保留。

@@ -65,6 +65,7 @@ class KnowledgeStore:
     def __init__(self, data_dir):
         self.docs_file = os.path.join(data_dir, "kb_docs.json")
         self.chunks_file = os.path.join(data_dir, "kb_chunks.json")
+        self.raw_file = os.path.join(data_dir, "kb_raw.json")
         self.index_file = os.path.join(data_dir, "kb_index.faiss")
         self.links_file = os.path.join(data_dir, "links.json")
         self.meta_file = os.path.join(data_dir, "kb_meta.json")
@@ -72,6 +73,7 @@ class KnowledgeStore:
 
         self.docs = _load_json(self.docs_file, [])
         self.chunks = _load_json(self.chunks_file, {})
+        self.raw = _load_json(self.raw_file, {})  # doc_id -> 原始全文（供换策略重建用）
         self.links = _load_json(self.links_file, None)
         if self.links is None:
             self.links = [{"id": secrets.token_hex(8), **l} for l in DEFAULT_LINKS]
@@ -101,6 +103,9 @@ class KnowledgeStore:
     def _persist_chunks(self):
         _save_json(self.chunks_file, self.chunks)
 
+    def _persist_raw(self):
+        _save_json(self.raw_file, self.raw)
+
     def _persist_index(self):
         if self.index is not None:
             faiss.write_index(self.index, self.index_file)
@@ -117,7 +122,7 @@ class KnowledgeStore:
         chunking=None 时用 config.DEFAULT_CHUNKING（默认 fixed，等价旧 split_text）。
         """
         name = chunking or config.DEFAULT_CHUNKING
-        chunker = build_chunker(name, **config.chunker_opts(name))
+        chunker = build_chunker(name, **config.chunker_opts(name))  # 未知策略名此处即抛 KeyError
         chunks = chunker.chunk(text)
         if not chunks:
             raise RuntimeError("内容为空，无法入库")
@@ -141,11 +146,13 @@ class KnowledgeStore:
                 "chars": sum(len(c) for c in chunks),
             }
             self.docs.append(doc)
+            self.raw[doc_id] = text  # 存原文，供换分块策略重建
             if status == "approved":
                 self._embed_doc_locked(doc)
             self._bm25_dirty = True
             self._persist_docs()
             self._persist_chunks()
+            self._persist_raw()
             self._persist_meta()
             self._persist_index()
             return doc
@@ -226,11 +233,119 @@ class KnowledgeStore:
             self.docs = [d for d in self.docs if d["id"] != doc_id]
             for cid in doc.get("chunk_ids", []):
                 self.chunks.pop(cid, None)
+            self.raw.pop(doc_id, None)
             self._bm25_dirty = True
             self._persist_docs()
             self._persist_chunks()
+            self._persist_raw()
             self._persist_index()
             return doc
+
+    # ---------- 分块重建（Slice 3）----------
+
+    def _new_chunk_ids(self, doc_id, pieces, into=None):
+        """给切块分配自增 id 并写入 into（默认 self.chunks），返回 id 列表。调用方需已持锁。"""
+        target = self.chunks if into is None else into
+        cids = []
+        for piece in pieces:
+            cid = str(self.next_id)
+            self.next_id += 1
+            target[cid] = {"doc_id": doc_id, "text": piece}
+            cids.append(cid)
+        return cids
+
+    def _rechunk_locked(self, doc, text, chunking):
+        """按 chunking 重切 text 写进 self.chunks 并更新 doc 元数据；返回新块数。
+        调用方需已持锁，且已清理该 doc 旧的块/向量。未知策略名由 build_chunker 抛 KeyError。"""
+        chunker = build_chunker(chunking, **config.chunker_opts(chunking))
+        pieces = chunker.chunk(text)
+        if not pieces:
+            raise RuntimeError("重新分块后内容为空")
+        doc["chunk_ids"] = self._new_chunk_ids(doc["id"], pieces)
+        doc["chunking"] = chunking
+        doc["chars"] = sum(len(p) for p in pieces)
+        return len(pieces)
+
+    def rebuild_doc(self, doc_id, chunking=None):
+        """单篇重建：可选换分块策略 -> 重切 -> 重嵌入（仅 approved 进索引）。
+
+        历史文档若缺原始全文，只能按现有块原样重嵌入，不能换策略（换策略请重新上传/采集）。
+        """
+        with self.lock:
+            doc = self.get_doc(doc_id)
+            if not doc:
+                raise RuntimeError("文档不存在")
+            target = chunking or doc.get("chunking") or config.DEFAULT_CHUNKING
+            was_approved = doc.get("status") == "approved"
+            text = self.raw.get(doc_id)
+
+            if not text:
+                if chunking and chunking != doc.get("chunking"):
+                    raise RuntimeError("该文档缺原始全文（历史数据），无法更换分块策略，请重新上传/采集")
+                if was_approved:
+                    self._remove_doc_vectors_locked(doc)
+                    self._embed_doc_locked(doc)
+                self._bm25_dirty = True
+                self._persist_docs()
+                self._persist_index()
+                return {"doc": doc, "chunks": len(doc.get("chunk_ids", [])), "re_sharded": False}
+
+            if was_approved:
+                self._remove_doc_vectors_locked(doc)
+            for cid in doc.get("chunk_ids", []):
+                self.chunks.pop(cid, None)
+            n = self._rechunk_locked(doc, text, target)
+            if was_approved:
+                self._embed_doc_locked(doc)
+            self._bm25_dirty = True
+            self._persist_docs()
+            self._persist_chunks()
+            self._persist_meta()
+            self._persist_index()
+            return {"doc": doc, "chunks": n, "re_sharded": True}
+
+    def rebuild_all(self):
+        """全库重建：逐篇按各自记录的分块策略重新切块 + 从零重建 FAISS 索引。
+
+        历史无原文的文档保留其现有块（仅对 approved 的重新嵌入）。会重花 embedding 额度。
+        """
+        with self.lock:
+            new_chunks = {}
+            # 1) 先保留历史无原文文档的现有块
+            for cid, ch in self.chunks.items():
+                if not self.raw.get(ch["doc_id"]):
+                    new_chunks[cid] = ch
+            # 2) 重新切所有有原文的文档
+            for doc in self.docs:
+                text = self.raw.get(doc["id"])
+                name = doc.get("chunking") or config.DEFAULT_CHUNKING
+                if not text:
+                    for cid in doc.get("chunk_ids", []):
+                        if cid in self.chunks:
+                            new_chunks[cid] = self.chunks[cid]
+                    continue
+                chunker = build_chunker(name, **config.chunker_opts(name))
+                pieces = chunker.chunk(text)
+                if not pieces:
+                    for cid in doc.get("chunk_ids", []):
+                        if cid in self.chunks:
+                            new_chunks[cid] = self.chunks[cid]
+                    continue
+                doc["chunk_ids"] = self._new_chunk_ids(doc["id"], pieces, into=new_chunks)
+                doc["chars"] = sum(len(p) for p in pieces)
+            self.chunks = new_chunks
+            # 3) 索引从空重建，仅嵌入 approved
+            self.index = None
+            for doc in self.docs:
+                if doc.get("status") == "approved":
+                    self._embed_doc_locked(doc)
+            self._bm25_dirty = True
+            self._persist_docs()
+            self._persist_chunks()
+            self._persist_meta()
+            self._persist_index()
+            vecs = self.index.ntotal if self.index is not None else 0
+            return {"docs": len(self.docs), "chunks": len(self.chunks), "vectors": vecs}
 
     def stats(self):
         with self.lock:
