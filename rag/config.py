@@ -33,6 +33,14 @@ TELEM_TREND_DAYS = int(os.environ.get("KB_TELEM_DAYS", "30"))
 # 多轮对话（Slice 5）：随请求携带的最大历史条数（user+assistant 各计一条），防 prompt 膨胀
 HISTORY_MAX = int(os.environ.get("KB_HISTORY_MAX", "12"))
 
+# 离线评测（Slice 6 · RAGAS-lite）：
+# - EVAL_MAX_RESULTS：评测历史落盘滚动上限（超限丢最旧），管理员手动「重跑评测」才写入
+# - EVAL_JUDGE_MODEL：裁判 LLM 使用的模型，默认与问答模型一致；env 可独立切换（比如换更便宜的）
+# - EVAL_METRICS：四指标顺序，后端聚合格式与前端条形渲染共享的唯一定义源
+EVAL_MAX_RESULTS = int(os.environ.get("KB_EVAL_MAX", "20"))
+EVAL_JUDGE_MODEL = os.environ.get("KB_EVAL_JUDGE_MODEL", CHAT_MODEL)
+EVAL_METRICS = ("faithfulness", "answer_relevance", "context_precision", "context_recall")
+
 
 def chunker_opts(name):
     return dict(CHUNKER_OPTS.get(name, {}))

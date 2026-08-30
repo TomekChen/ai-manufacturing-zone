@@ -688,3 +688,44 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **至此 Slice 5（意图路由 + 多轮对话，后端+前端+测试）完成，无遗留。** 下一切片：Slice 6 = 原 SPEC 的离线 RAGAS-lite 评测（内置小标准题集 + 手动「重跑评测」才花额度 + 四指标横向对比 + 可选真实问答抽样裁判 + 后台评测卡 + Seam S5 评测向）——**开工前先与老板确认**。
 
 **部署状态**：仍未上阿里云。后端**无状态**，本切片不新增数据文件（会话状态只在访客浏览器 `localStorage`）；遥测多出的 `intent/rewritten/turns` 字段随 `kb_telemetry.json` 落盘，容器 data 卷自动生成，老记录无这些字段也能被 `summarize` 兼容处理。
+
+---
+
+## 十八、第十五轮：RAGAS-lite 离线评测（Slice 6，回到 SPEC 主线）
+
+**目标**：把 SPEC §3.4 的 D5-b + D6 落地——管理员在后台点一下「重跑评测」，用一份内置的**小标准题集**跑一次问答 + 四段裁判 LLM 打分，看**忠实度 / 答案相关性 / 上下文精确率 / 上下文召回率**四个维度的均分，配合每次跑落盘的**当时策略快照**（chunking / retrieval / top_k / chat_model / judge_model …），实现"换策略前 vs 换策略后"的**量化横向对比**，弥补 Slice 4 在线看板只能看真实流量、看不到"标准答案命中率"的短板。
+
+**关键设计取舍**：
+- **不引 ragas 重依赖，自写四段裁判提示词**：SPEC §六 D5-b 明确"不引 ragas"，与 Slice 4 定"不引图表库"同源，避开本机装依赖踩坑。四段裁判各管一件事：忠实度看"回答有没有编造上下文以外的事实"、答案相关性看"切不切题"、上下文精确率看"检索到的段落里有多少是真有用"、上下文召回率看"标准答案要点被上下文覆盖多少"。每段独立调用一次 `chat(messages, temperature=0)` 让裁判返回"分数：X.XX"格式，`parse_score` 用两段正则（带中文标签优先 → 兜底抓任意浮点）抠出 0–1 数值并夹到区间。**18 题一轮 = 72 次 LLM 调用**，估算 2–3 元/次，只在手动点按钮时发生。
+- **异步后台线程 + 状态轮询**：一次评测要跑 2–4 分钟，绝不能占用 HTTP 请求线程。`start()` 立刻返回 202 + 启动快照，评测在线程里跑，逐题更新模块级 `_STATE` 的 `current / current_qid / running / error / last_record_id`；前端每 3 秒轮 `GET /api/admin/kb/eval/status`。同模块级 `_LOCK` 保证**同一进程只允许一次评测在跑**，避免管理员手滑连点双倍烧额度。
+- **对照组从主指标里剔除**：题集里 3 道 control 题（天气 / 写诗 / 世界杯）故意让 KB 答不出，用来**自检评测体系对失败模式是否敏感**。`summarize_items` 把 `overall` 只按 knowledge 题平均，`by_type.control` 单列；前端主卡片显示 knowledge 均分，横向条形对比图用粗条=knowledge / 细条=control 并排，control 分数越低说明裁判越严。
+- **每次落盘带策略快照**：`strategy_snapshot()` 抓当前 config 的 chunking / retrieval / top_k / embed_dim / chunk_size / chunk_overlap / rrf_k / chat_model / judge_model / history_max 十项，作为评测记录的一部分写进 `data/kb_eval_results.json`。这样换 `KB_RETRIEVAL` 环境变量重启后跑一次，就能和上次直接对比"bm25 vs hybrid 谁的上下文召回率高"。
+- **无 API Key 直接拒绝启动 + 前端按钮置灰**：`has_api_key()` 检环境变量，`start()` 抛 `RuntimeError`，`app.py` 路由翻成 **400**；`GET /api/admin/kb/eval/status` 一直可用（不需要 Key），前端首次挂载拿到 400 就把按钮 disable 并显示原因，符合 US-34。
+- **裁判 LLM 挂掉不阻断整轮**：`judge_one` 内部 `try/except` 返回 `None`；`summarize_items._avg` 过滤 None 后取均值，全 None 时返回 None；`counts.skipped` 逐指标统计跳过数——这样单题某指标偶发网络问题不会毁掉整轮 2–3 元的评测。
+
+**本轮做了什么**：
+- 后端：
+  - 新增 `rag/eval_questions.json`（题集数据，**随代码走版本控制**）：**18 题 = 15 knowledge + 3 control**，覆盖概念定义 / 方法路径 / 具体技术 / 对比概念 / KPI 计算 / 标准合规 / 型号精确词 / 经典理论 / 前沿应用共 9 类，题目和标准答案要点均为老板参与拟定（老板最初问要不要就 6 题、后要求扩到 18 题并补供应链 / 能耗）。
+  - 新增 `rag/evaluate.py`：`load_questions`（含字段/类型/id 唯一性校验）→ `parse_score`（带中文标签优先 + 任意浮点兜底 + 越界夹到 [0,1]）→ `JUDGE_PROMPTS` 四段（各自说明评分维度 + 强制"分数：X.XX"结尾）→ `build_judge_messages` 固定四段结构（问题/参考要点/上下文/模型回答）→ `judge_one` 单次调用 → `run_one_question` 串起 `store.ask` + `store.search` 拿上下文 + 4 次裁判 → `summarize_items` 分 knowledge/control 聚合 → `EvalStore` 文件型滚动上限落盘（默认 20，env `KB_EVAL_MAX` 覆盖）→ `start / get_state / reset_state` 三件套管线程与状态。
+  - `rag/config.py` 加 `EVAL_MAX_RESULTS`(20)、`EVAL_JUDGE_MODEL`（默认与 CHAT_MODEL 一致，可独立换更便宜的）、`EVAL_METRICS` 元组（前后端共享的四指标顺序，避免拼写漂移）。
+  - `app.py` 新增三端点：`POST /api/admin/kb/eval/run`（202 启动 / 409 已在跑 / 400 无 Key）、`GET /api/admin/kb/eval/status`（轮询进度）、`GET /api/admin/kb/eval/results?limit=N`（读历史 + 四指标元数据 + 中文标签）。全部 `@require_admin` 装饰。
+  - `.gitignore` 加 `data/kb_eval_results.json`（滚动历史数据，不进仓库）。
+- 前端：
+  - 新增 `src/AdminEval.jsx`：顶部四指标卡（带 count-up 补间 + 右上角 Δ 徽标显示与上次比较的绝对百分点差，`首次` / `↑x.x pt` / `↓x.x pt`），下方一行策略快照 chip 列出当次配置，主区"knowledge vs control"双条横向对比（粗渐变条=knowledge 均分、细灰条=control 均分），底部折叠表格"逐题分数明细"（control 行淡底 + 前置"对照"角标）。工具栏「▶ 重跑评测」+ 「刷新」，`running` 时按钮文案变"评测中…"并禁用；顶部一条进度条 + `当前 i/18 · 当前题目 qXX`。首次挂载并行拉 `/results` + `/status`，`running=true` 时起 3 秒轮询定时器。
+  - `src/main.jsx` 加"评测"标签按钮 + `{activeTab === 'eval' && <AdminEval token={token} />}` 面板挂载。
+  - `src/style.css` 补 `.ev-*`（panel / run-btn / progress / delta chip / snapshot chip / compare row / detail table / control-row），全部复用 Slice 4 已建的 `.an-*` 令牌，暗色一致，未引新色值。≤720px 响应式收窄 compare-row 列宽、隐藏 category 列。
+
+**测试与验证**：
+- 新增 `tests/test_rag_eval.py` **24/24**（Seam S5，纯离线确定性）：题集加载字段/类型/唯一性 + 文件缺失抛错、`parse_score` 中英文/带分数/越界/垃圾输入 5 类边界、`build_judge_messages` 结构与 metric 特定关键字、`JUDGE_PROMPTS` 与 `METRIC_LABELS` 覆盖四指标、`judge_one` 假 chat 正确解析 + 异常时返回 None、`strategy_snapshot` 十项齐全且与 config 同步、`run_one_question` 假 store + 桩 chat 串起完整链路并回填四分数、无命中场景不崩、`summarize_items` 主指标只算 knowledge / by_type 分开 / 单指标 None 计入 skipped / 空集合不炸、`EvalStore` append + 补 id/ts + 滚动上限 + latest、`has_api_key` 环境驱动、`start` 无 Key / 已 running 两种拒启动、`get_state` 字段齐全。
+- 回归：`test_rag_unit` 11/11、`test_rag_retrieval` 9/9、`test_rag_rebuild` 6/6、`test_rag_telemetry` 10/10、`test_rag_intents` 15/15 仍全过（**六文件合计 75/75**）。
+- 全栈冒烟 42 项断言全绿（假 faiss/bs4/嵌入/LLM）：① 无 Key 拒启动 + 状态未 running；② 设 Key + 桩 store + 假 chat 调 `start()` → 起真线程 → 30s 内跑完 18 题 → 状态 `current==total` / `finished_at` / `last_record_id` / `last_summary` 都齐；③ 落盘记录结构完整（id/ts/elapsed/strategy_snapshot/counts/overall/by_type/per_question 全在），counts 分布 15+3，overall 四指标都 == 0.83（假 chat 恒定分数），per_question 覆盖 q01–q18 且 q06 intent=offtopic；④ 触发滚动上限验证丢最旧；⑤ HTTP 层——无 token 401 / 缺 Key 400（错误原因回显）/ 带 Key 202 启动 / `/status` 轮询到完成 / `/results` 返回 metrics + 中文 labels + 完整 history + 最近一条含 overall 与 per_question。
+- `npm run build` 成功（41 模块，`dist/assets/index-*.js` 229.84 kB、css 53.80 kB），产物已确认含新「评测」标签、`重跑评测` 按钮与相关 CSS 类。
+
+**关于范围与后续**：SPEC §3.4 里的 US-33「对近期 N 条真实问答抽样裁判打分」按老板意愿**顺延为 Slice 7**——Slice 4 的在线看板已经通过 👍/👎 与拒绝率给了真实流量的反馈信号，再叠一层 LLM 打分边际价值不高且要多花额度。SPEC §三"超出范围"里"多轮对话记忆"一项在 Slice 5 已改纳入，本切片无新的越范围动作。
+
+**至此 Slice 6（离线 RAGAS-lite 评测，后端 + 前端 + 测试）完成，无遗留。** 下一切片候选（**开工前先与老板确认**）：
+- Slice 7：US-33 真实问答抽样裁判（勾选才跑，默认关）+ 从 `kb_telemetry.json` 挑最近知识问答喂给评测器打分并入看板；
+- 或阿里云部署（前 6 个切片累积的 KB RAG 全功能一次性上线）；
+- 或其他老板临时想加的需求。
+
+**部署状态**：仍未上阿里云。`rag/eval_questions.json` 是题集**源码**，随代码部署，不进 gitignore；`data/kb_eval_results.json` 是运行时数据，容器 data 卷自动生成，滚动 20 条上限；无 `DASHSCOPE_API_KEY` 时评测端点走 400 分支，前端按钮置灰，与问答主流程无耦合，可正常上线。

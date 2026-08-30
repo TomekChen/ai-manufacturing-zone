@@ -17,6 +17,7 @@ data/kb_raw.json
 data/kb_meta.json
 data/kb_index.faiss
 data/kb_telemetry.json
+data/kb_eval_results.json
 *.log
 # 编辑器/系统
 .vscode/

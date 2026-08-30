@@ -14,6 +14,7 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 import kb
+from rag import evaluate as kb_eval
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 全局上传上限 20MB（知识库文档放宽到 10MB）
@@ -566,6 +567,52 @@ def api_admin_kb_analytics():
     except Exception as e:
         return jsonify({"error": "统计失败：%s" % str(e)[:120]}), 500
     return jsonify(data)
+
+
+# ── Slice 6：离线 RAGAS-lite 评测（管理员手动触发才花额度） ──────────────────
+@app.route("/api/admin/kb/eval/run", methods=["POST"])
+@require_admin
+def api_admin_kb_eval_run():
+    """启动一次后台评测。已跑→409；无 API Key→400；正常→202 带启动快照。"""
+    try:
+        info = kb_eval.start(KB, DATA_DIR)
+    except RuntimeError as e:
+        msg = str(e)
+        if "正在" in msg or "running" in msg.lower():
+            return jsonify({"error": msg, "state": kb_eval.get_state()}), 409
+        if "DASHSCOPE_API_KEY" in msg or "未配置" in msg:
+            return jsonify({"error": msg}), 400
+        return jsonify({"error": msg}), 400
+    except FileNotFoundError as e:
+        return jsonify({"error": "评测题集缺失：%s" % str(e)[:120]}), 500
+    return jsonify(info), 202
+
+
+@app.route("/api/admin/kb/eval/status", methods=["GET"])
+@require_admin
+def api_admin_kb_eval_status():
+    """轮询用：返回当前进度与最近一次已完成结果的摘要。"""
+    return jsonify(kb_eval.get_state())
+
+
+@app.route("/api/admin/kb/eval/results", methods=["GET"])
+@require_admin
+def api_admin_kb_eval_results():
+    """评测历史：滚动上限由 config.EVAL_MAX_RESULTS 控制；支持 ?limit=N 只取最近几条。"""
+    try:
+        limit = int(request.args.get("limit") or kb_eval.config.EVAL_MAX_RESULTS)
+    except (TypeError, ValueError):
+        limit = kb_eval.config.EVAL_MAX_RESULTS
+    limit = max(1, min(kb_eval.config.EVAL_MAX_RESULTS, limit))
+    try:
+        history = kb_eval.EvalStore(DATA_DIR).load()
+    except Exception as e:
+        return jsonify({"error": "读取评测历史失败：%s" % str(e)[:120]}), 500
+    return jsonify({
+        "metrics": list(kb_eval.config.EVAL_METRICS),
+        "labels": kb_eval.METRIC_LABELS,
+        "history": history[-limit:],
+    })
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])
