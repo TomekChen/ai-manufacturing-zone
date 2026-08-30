@@ -4,6 +4,7 @@ import time
 import threading
 import secrets
 import hashlib
+from functools import wraps
 from datetime import datetime
 from urllib.parse import urlparse
 from flask import Flask, send_from_directory, request, jsonify
@@ -75,6 +76,16 @@ def verify_token(token):
     return t == expected[:32]
 
 
+def require_admin(fn):
+    """视图装饰器：统一后台鉴权。放在 @app.route 之下，替代各路由重复的 verify_token 样板。"""
+    @wraps(fn)  # 保留原函数名，避免 Flask endpoint 全部塌成 wrapper 而冲突
+    def wrapper(*args, **kwargs):
+        if not verify_token(request.headers.get("Authorization", "")):
+            return jsonify({"error": "Unauthorized"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def check_alive(url, timeout=15):
     """宽松心跳检测：服务只要能建立连接并返回非 5xx 状态即视为在线。"""
     if not url:
@@ -142,9 +153,8 @@ def api_config():
 
 
 @app.route("/api/admin/config", methods=["POST"])
+@require_admin
 def api_admin_config():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     payload = request.get_json(force=True) or {}
     cfg = get_config()
     cfg.update({k: v for k, v in payload.items() if k in ("title", "accent", "canvas")})
@@ -158,9 +168,8 @@ def api_projects():
 
 
 @app.route("/api/admin/projects", methods=["GET", "POST"])
+@require_admin
 def api_admin_projects():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     if request.method == "GET":
         return jsonify(get_projects())
 
@@ -207,18 +216,16 @@ def api_admin_projects():
 
 
 @app.route("/api/admin/projects/<pid>", methods=["DELETE"])
+@require_admin
 def api_admin_delete_project(pid):
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     projects = [p for p in get_projects() if p["id"] != pid]
     save_json(PROJECTS_FILE, projects)
     return jsonify(projects)
 
 
 @app.route("/api/admin/heartbeat", methods=["POST"])
+@require_admin
 def api_admin_heartbeat():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     heartbeat_all()
     return jsonify(get_projects())
 
@@ -255,18 +262,16 @@ def probe_url(url, timeout=15):
 
 
 @app.route("/api/admin/probe", methods=["POST"])
+@require_admin
 def api_admin_probe():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     payload = request.get_json(force=True) or {}
     url = (payload.get("url") or "").strip()
     return jsonify(probe_url(url))
 
 
 @app.route("/api/admin/upload", methods=["POST"])
+@require_admin
 def api_admin_upload():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     if "file" not in request.files:
         return jsonify({"error": "no file"}), 400
     file = request.files["file"]
@@ -388,17 +393,15 @@ def api_kb_ask():
 
 
 @app.route("/api/admin/kb/docs", methods=["GET"])
+@require_admin
 def api_admin_kb_docs():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
 
 
 @app.route("/api/admin/kb/docs/<doc_id>", methods=["GET"])
+@require_admin
 def api_admin_kb_doc_detail(doc_id):
     """管理员预览单条文档及分块内容。"""
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     try:
         detail = KB.get_doc_detail(doc_id)
     except RuntimeError as e:
@@ -409,9 +412,8 @@ def api_admin_kb_doc_detail(doc_id):
 
 
 @app.route("/api/admin/kb/docs/<doc_id>/approve", methods=["POST"])
+@require_admin
 def api_admin_kb_approve(doc_id):
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     try:
         doc = KB.approve(doc_id)
     except RuntimeError as e:
@@ -422,9 +424,8 @@ def api_admin_kb_approve(doc_id):
 
 
 @app.route("/api/admin/kb/docs/<doc_id>/reject", methods=["POST"])
+@require_admin
 def api_admin_kb_reject(doc_id):
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     try:
         doc = KB.reject(doc_id)
     except RuntimeError as e:
@@ -433,9 +434,8 @@ def api_admin_kb_reject(doc_id):
 
 
 @app.route("/api/admin/kb/docs/<doc_id>", methods=["DELETE"])
+@require_admin
 def api_admin_kb_delete(doc_id):
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     try:
         KB.delete(doc_id)
     except RuntimeError as e:
@@ -459,9 +459,8 @@ def _crawl_to_kb(url, doc_type="url"):
 
 
 @app.route("/api/admin/kb/crawl", methods=["POST"])
+@require_admin
 def api_admin_kb_crawl():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     payload = request.get_json(force=True, silent=True) or {}
     try:
         doc = _crawl_to_kb(payload.get("url"))
@@ -473,9 +472,8 @@ def api_admin_kb_crawl():
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])
+@require_admin
 def api_admin_links():
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     if request.method == "GET":
         return jsonify(KB.list_links())
     payload = request.get_json(force=True, silent=True) or {}
@@ -487,17 +485,15 @@ def api_admin_links():
 
 
 @app.route("/api/admin/links/<link_id>", methods=["DELETE"])
+@require_admin
 def api_admin_links_delete(link_id):
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     return jsonify(KB.delete_link(link_id))
 
 
 @app.route("/api/admin/links/<link_id>/crawl", methods=["POST"])
+@require_admin
 def api_admin_links_crawl(link_id):
     """从友情链接一键采集入库。"""
-    if not verify_token(request.headers.get("Authorization", "")):
-        return jsonify({"error": "Unauthorized"}), 401
     link = next((l for l in KB.list_links() if l["id"] == link_id), None)
     if not link:
         return jsonify({"error": "链接不存在"}), 404
