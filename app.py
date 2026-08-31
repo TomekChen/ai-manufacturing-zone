@@ -15,6 +15,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 import kb
 from rag import evaluate as kb_eval
+from rag import prd as kb_prd
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 全局上传上限 20MB（知识库文档放宽到 10MB）
@@ -613,6 +614,31 @@ def api_admin_kb_eval_results():
         "labels": kb_eval.METRIC_LABELS,
         "history": history[-limit:],
     })
+
+
+# ── PRD 生成器（对齐老板新方向：AI 智能体平台转型售前工具） ──────────────────
+@app.route("/api/admin/prd/generate", methods=["POST"])
+@require_admin
+def api_admin_prd_generate():
+    """填「公司 + 业务介绍」→ 生成一份面向该客户的《AI 智能体平台功能需求 PRD》。
+
+    mode=guide 引导（客户不懂，先给草稿+澄清问题）；mode=normalize 规范化（整理客户原始需求）。
+    生成前会用知识库检索做行业接地（空库自动降级）。LLM 调用较慢，前端需 loading。
+    """
+    if rate_limited(request.remote_addr, limit=6, window=60):
+        return jsonify({"error": "生成太频繁，请稍后再试"}), 429
+    if not kb_prd.has_api_key():
+        return jsonify({"error": "未配置 DASHSCOPE_API_KEY 环境变量，无法生成 PRD"}), 400
+    payload = request.get_json(force=True, silent=True) or {}
+    try:
+        result = kb_prd.generate_prd(KB, payload)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"error": "生成失败：%s" % str(e)[:160]}), 502
+    except Exception as e:
+        return jsonify({"error": "生成失败：%s" % str(e)[:160]}), 500
+    return jsonify(result)
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])

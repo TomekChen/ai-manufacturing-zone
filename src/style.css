@@ -1226,3 +1226,84 @@ a.qa-source-name:hover { color: var(--accent); }
 }
 .doc-preview-expand { margin-top: 8px; font-size: 12px; }
 .btn-xs { padding: 4px 10px; font-size: 12px; }
+
+/* ===== PRD 生成器（Slice：对齐老板新方向） ===== */
+.prd-panel { max-width: 900px; }
+.prd-intro { margin-bottom: 18px; }
+.prd-intro-title { font-size: 16px; font-weight: 600; color: var(--ink-strong); }
+.prd-intro-sub { margin-top: 6px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.prd-form { display: flex; flex-direction: column; gap: 16px; }
+.prd-field label { display: block; font-size: 13px; font-weight: 500; color: var(--body); margin-bottom: 6px; }
+.prd-req { color: var(--error); }
+.prd-opt { color: var(--faint); font-weight: 400; font-size: 12px; }
+.prd-field input, .prd-field textarea {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--hairline-strong); border-radius: var(--radius-xs);
+  font-family: inherit; resize: vertical; transition: border-color .2s ease, box-shadow .2s ease;
+}
+.prd-field input:focus, .prd-field textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.prd-count { text-align: right; font-size: 11px; color: var(--faint); margin-top: 4px; }
+.prd-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.prd-mode {
+  display: block; cursor: pointer; padding: 12px 14px; border-radius: var(--radius-xs);
+  border: 1px solid var(--hairline-strong); background: var(--surface-2); transition: all .18s ease;
+}
+.prd-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.prd-mode.active { border-color: var(--accent); background: var(--accent-soft); }
+.prd-mode-name { display: block; font-size: 14px; font-weight: 600; color: var(--ink-strong); }
+.prd-mode.active .prd-mode-name { color: var(--accent); }
+.prd-mode-desc { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.prd-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.prd-loading { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.prd-spinner {
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--hairline-strong);
+  border-top-color: var(--accent); animation: prd-spin .8s linear infinite;
+}
+@keyframes prd-spin { to { transform: rotate(360deg); } }
+.prd-err {
+  padding: 10px 12px; font-size: 13px; color: var(--error);
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-xs);
+}
+.prd-result { margin-top: 24px; }
+.prd-result-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.prd-badge {
+  font-size: 12px; padding: 3px 10px; border-radius: 999px; color: var(--muted);
+  background: var(--surface-3); border: 1px solid var(--hairline);
+}
+.prd-badge.ok { color: var(--success); border-color: rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.1); }
+.prd-badge.muted { color: var(--muted); }
+.prd-sources { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.prd-src { margin-left: 8px; }
+.prd-src a { color: var(--accent); }
+.prd-doc {
+  background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 22px 26px; color: var(--body); font-size: 14px; line-height: 1.75;
+}
+.prd-doc .prd-h { color: var(--ink-strong); line-height: 1.4; margin: 20px 0 10px; }
+.prd-doc .prd-h:first-child { margin-top: 0; }
+.prd-doc .prd-h1 { font-size: 20px; border-bottom: 1px solid var(--hairline-strong); padding-bottom: 8px; }
+.prd-doc .prd-h2 { font-size: 17px; }
+.prd-doc .prd-h3 { font-size: 15px; color: var(--accent); }
+.prd-doc .prd-h4, .prd-doc .prd-h5, .prd-doc .prd-h6 { font-size: 14px; }
+.prd-doc .prd-p { margin: 10px 0; }
+.prd-doc .prd-ul, .prd-doc .prd-ol { margin: 10px 0; padding-left: 22px; }
+.prd-doc .prd-ul { list-style: disc; }
+.prd-doc .prd-ol { list-style: decimal; }
+.prd-doc li { margin: 4px 0; }
+.prd-doc .prd-hr { border: none; border-top: 1px solid var(--hairline-strong); margin: 18px 0; }
+.prd-doc .prd-code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12.5px;
+  background: var(--surface-3); padding: 1px 6px; border-radius: 4px; color: var(--cyan);
+}
+.prd-doc .prd-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.prd-doc .prd-table th, .prd-doc .prd-table td {
+  border: 1px solid var(--hairline-strong); padding: 8px 10px; text-align: left; vertical-align: top;
+}
+.prd-doc .prd-table th { background: var(--surface-3); color: var(--ink-strong); font-weight: 600; }
+.prd-doc .prd-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+@media (max-width: 720px) {
+  .prd-modes { grid-template-columns: 1fr; }
+  .prd-doc { padding: 16px 14px; }
+}

@@ -41,6 +41,20 @@ EVAL_MAX_RESULTS = int(os.environ.get("KB_EVAL_MAX", "20"))
 EVAL_JUDGE_MODEL = os.environ.get("KB_EVAL_JUDGE_MODEL", CHAT_MODEL)
 EVAL_METRICS = ("faithfulness", "answer_relevance", "context_precision", "context_recall")
 
+# PRD 生成器（对齐老板新方向，售前工具）：
+# - PRD_MODEL：生成 PRD 用的对话模型，默认与问答模型一致
+# - PRD_TOP_K：生成前从知识库检索多少条行业参考做接地（空库则不接地）
+# - PRD_TEMPERATURE：兼顾专业与稳定，取中等偏高
+# - 输入长度上限：company / industry / business / raw_requirements，防 prompt 膨胀
+PRD_MODEL = os.environ.get("KB_PRD_MODEL", CHAT_MODEL)
+PRD_TOP_K = int(os.environ.get("KB_PRD_TOP_K", "4"))
+PRD_TEMPERATURE = float(os.environ.get("KB_PRD_TEMPERATURE", "0.5"))
+PRD_COMPANY_MAX = int(os.environ.get("KB_PRD_COMPANY_MAX", "60"))
+PRD_INDUSTRY_MAX = int(os.environ.get("KB_PRD_INDUSTRY_MAX", "40"))
+PRD_BIZ_MIN = int(os.environ.get("KB_PRD_BIZ_MIN", "5"))
+PRD_BIZ_MAX = int(os.environ.get("KB_PRD_BIZ_MAX", "4000"))
+PRD_RAW_MAX = int(os.environ.get("KB_PRD_RAW_MAX", "6000"))
+
 
 def chunker_opts(name):
     return dict(CHUNKER_OPTS.get(name, {}))
