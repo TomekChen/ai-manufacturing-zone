@@ -135,9 +135,9 @@ class _StubStore:
 
 
 def _make_chat(return_text=None, raise_exc=False, capture=None):
-    def _chat(messages, temperature=0.3):
+    def _chat(messages, temperature=0.3, timeout=60):
         if capture is not None:
-            capture.append(messages)
+            capture.append((messages, timeout))
         if raise_exc:
             raise RuntimeError("上游 500")
         return return_text
@@ -160,6 +160,13 @@ def test_generate_prd():
         check("hits 计数=1", res["hits"] == 1)
         check("sources 提取标题", len(res["sources"]) == 1 and res["sources"][0]["title"] == "工控网")
         check("带 model 字段", "model" in res)
+
+        # 超时透传：generate_prd 应把更长的 config.PRD_TIMEOUT 传给 chat（而非默认 60s）
+        cap = []
+        prd.chat = _make_chat(return_text="x", capture=cap)
+        prd.generate_prd(_StubStore(hits=[]), payload)
+        check("chat 收到 PRD_TIMEOUT", bool(cap) and cap[0][1] == prd.config.PRD_TIMEOUT)
+        prd.chat = _make_chat(return_text="# PRD 全文\n正文…")  # 复位供后续用例
 
         # 空知识库 -> 降级不接地
         res2 = prd.generate_prd(_StubStore(hits=[]), payload)

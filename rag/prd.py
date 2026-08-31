@@ -170,7 +170,7 @@ def generate_prd(store, payload):
         company=data["company"], industry=data["industry"], business=data["business"],
         mode=data["mode"], raw_requirements=data["raw_requirements"], context=context,
     )
-    prd_text = chat(messages, temperature=config.PRD_TEMPERATURE)
+    prd_text = chat(messages, temperature=config.PRD_TEMPERATURE, timeout=config.PRD_TIMEOUT)
 
     return {
         "prd": (prd_text or "").strip(),

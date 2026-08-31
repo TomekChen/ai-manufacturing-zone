@@ -45,10 +45,12 @@ EVAL_METRICS = ("faithfulness", "answer_relevance", "context_precision", "contex
 # - PRD_MODEL：生成 PRD 用的对话模型，默认与问答模型一致
 # - PRD_TOP_K：生成前从知识库检索多少条行业参考做接地（空库则不接地）
 # - PRD_TEMPERATURE：兼顾专业与稳定，取中等偏高
+# - PRD_TIMEOUT：生成整份 11 段 PRD 耗时较长，给对话请求单独的读超时（默认 120s），env 可调
 # - 输入长度上限：company / industry / business / raw_requirements，防 prompt 膨胀
 PRD_MODEL = os.environ.get("KB_PRD_MODEL", CHAT_MODEL)
 PRD_TOP_K = int(os.environ.get("KB_PRD_TOP_K", "4"))
 PRD_TEMPERATURE = float(os.environ.get("KB_PRD_TEMPERATURE", "0.5"))
+PRD_TIMEOUT = int(os.environ.get("KB_PRD_TIMEOUT", "120"))
 PRD_COMPANY_MAX = int(os.environ.get("KB_PRD_COMPANY_MAX", "60"))
 PRD_INDUSTRY_MAX = int(os.environ.get("KB_PRD_INDUSTRY_MAX", "40"))
 PRD_BIZ_MIN = int(os.environ.get("KB_PRD_BIZ_MIN", "5"))
