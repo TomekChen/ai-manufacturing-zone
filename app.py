@@ -30,6 +30,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 PROJECTS_FILE = os.path.join(DATA_DIR, "projects.json")
 
+# 外观配置内置默认值（唯一真源）：get_config 兜底 & "恢复默认" 都用它
+DEFAULT_CONFIG = {"title": "智能制造专区", "accent": "#3b82f6", "canvas": "#0b0b0f"}
+
 ALLOWED_IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_KB_EXTS = {"txt", "md", "pdf"}
@@ -58,7 +61,7 @@ def save_json(path, data):
 
 
 def get_config():
-    return load_json(CONFIG_FILE, {"title": "智能制造专区", "accent": "#3b82f6", "canvas": "#0b0b0f"})
+    return load_json(CONFIG_FILE, dict(DEFAULT_CONFIG))
 
 
 def get_projects():
@@ -167,6 +170,15 @@ def api_admin_config():
     payload = request.get_json(force=True) or {}
     cfg = get_config()
     cfg.update({k: v for k, v in payload.items() if k in ("title", "accent", "canvas")})
+    save_json(CONFIG_FILE, cfg)
+    return jsonify(cfg)
+
+
+@app.route("/api/admin/config/reset", methods=["POST"])
+@require_admin
+def api_admin_config_reset():
+    """恢复默认外观配置（把标题/主色/背景重置回内置默认值），供管理员改坏外观时一键救急。"""
+    cfg = dict(DEFAULT_CONFIG)
     save_json(CONFIG_FILE, cfg)
     return jsonify(cfg)
 

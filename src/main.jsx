@@ -359,6 +359,18 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
     }
   };
 
+  const resetConfig = async () => {
+    if (!confirm('确定恢复默认外观配置吗？当前的站点标题、主色调、背景色都会被重置。')) return;
+    try {
+      const def = await apiPost('/admin/config/reset', {}, token);
+      setLocalConfig(def || {});
+      onChange();
+      alert('已恢复默认外观配置');
+    } catch (err) {
+      alert('恢复失败：' + err.message);
+    }
+  };
+
   const triggerHeartbeat = async () => {
     try {
       await apiPost('/admin/heartbeat', {}, token);
@@ -442,8 +454,10 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
                 <input type="text" value={localConfig.canvas || ''} onChange={(e) => setLocalConfig({...localConfig, canvas: e.target.value})} placeholder="#0b0b0f" className="color-text" />
               </div>
               <div className="modal-actions">
+                <button className="btn btn-ghost" onClick={resetConfig}>恢复默认</button>
                 <button className="btn btn-primary" onClick={saveConfig}>保存外观配置</button>
               </div>
+              <p className="field-hint">改坏了外观？点「恢复默认」一键还原内置的站点标题、主色调（#3b82f6）与背景色（#0b0b0f）。</p>
             </div>
           )}
         </div>
