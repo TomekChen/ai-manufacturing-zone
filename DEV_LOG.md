@@ -795,3 +795,21 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - **界面整体美化**（老板嫌"看起来简单"，用 beautiful-pages 规范重做门户/知识库/问答/后台观感）；
 - **案例库**（老板提到"包括我们的一些案例"，做可维护的案例展示，并喂给 PRD 生成器当参考）；
 - 原 SPEC 的 Slice 7（抽样裁判）——优先级已低于上面几项。
+
+---
+
+## 二十一、PRD 生成器上线阿里云（含一处读超时踩坑修复）
+
+**上线动作**：老板点头"先上线 PRD 生成器"后，按既定 `source/` 打包约定部署——本地重建前端 dist（42 模块，确认已含 PRD 页签与 `.prd-*` 样式）→ 组 `project.tar.gz`（`Dockerfile`(source 风格)+`docker-compose.yml`+`source/`(app.py/kb.py/rag 含 prd.py/dist)，**不含** `.env`/`data`）→ paramiko 上传（md5 双端一致 `d9b9b75…`）→ 备份（`cp -a source source.bak-<ts>`、`tar czf data.bak-<ts>.tar.gz data`、`docker tag …:rollback-<ts>`）→ `rm -rf source; tar xzf` 解包 → `docker compose up -d --build` 重建镜像并滚动重启。`.env` 里上一切片改好的 `SECRET_KEY`/`ADMIN_PASSWORD`/`DASHSCOPE_API_KEY` 原样保留、未被动到。
+
+**踩到一个坑（真机验证才发现，单测/冒烟都测不出）**：接口连通性、鉴权、KB 8 篇向后兼容全绿，但"用真实 Key 跑一次真实生成"时连续两次 HTTP 500，报 `dashscope… Read timed out (read timeout=60)`。定位：`rag/embedding._dashscope` 默认读超时 60s，而 KB 问答返回短、60s 够用；PRD 要一次生成整份 11 段中文长文（实测约 6900 字），非流式要等全文吐完才返回，60s 顶不住。**这是运行时/网络侧才暴露的问题**，本地用假 chat 的单测和冒烟自然全绿——记一笔教训：涉及真实 LLM 长输出的功能，上线前最好真机点一次。
+
+**修法（小、可配、向后兼容）**：`chat()` 增加 `timeout` 参数并透传给 `_dashscope`；`config` 新增 `PRD_TIMEOUT`（env `KB_PRD_TIMEOUT` 可覆盖，默认 120）；`generate_prd` 用 `PRD_TIMEOUT` 调 chat。只影响 PRD 长生成，KB 问答仍走 60s 默认不动。补 1 条"超时透传"单测（PRD 单测 44 全绿，全量回归 99 项绿）。三文件 targeted 同步到服务器 `source/rag/` 后重建镜像、重启，再跑真实生成即通过。
+
+**真机验收（阿里云 47.115.223.159:8804）**：
+- 未带 token 调 `/api/admin/prd/generate` → 401；登录 → 32 位 token；
+- `/api/admin/kb/docs` → 旧 8 篇照常列出（新代码向后兼容再次确认）；
+- **真实接地生成（引导模式）**：`grounded=True`、`hits=4`、`model=qwen-plus`、正文 6900 字、恰好 11 个 `##` 段（文档信息→客户背景→转型目标→目标用户→智能体功能清单→平台功能→非功能→私有化技术架构建议→分三期≤20 周路线图→行业参考与案例→待客户确认问题清单），并带"AI 生成需人工复核"字样。
+- 回滚网兜底：本轮回滚镜像 `ai-manufacturing-zone-app:rollback-20260831-<ts>` + `source.bak-*` + `data.bak-*` 均在。
+
+**下一步**：PRD 生成器已在生产可用。接下来按老板优先级推进**界面整体美化**（老板嫌"看起来简单"），并把老板提到的一些案例沉淀进知识库当 PRD 生成的行业参考素材。开工前再跟老板对齐范围。
