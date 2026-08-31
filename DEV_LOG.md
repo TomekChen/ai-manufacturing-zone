@@ -813,3 +813,18 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - 回滚网兜底：本轮回滚镜像 `ai-manufacturing-zone-app:rollback-20260831-<ts>` + `source.bak-*` + `data.bak-*` 均在。
 
 **下一步**：PRD 生成器已在生产可用。接下来按老板优先级推进**界面整体美化**（老板嫌"看起来简单"），并把老板提到的一些案例沉淀进知识库当 PRD 生成的行业参考素材。开工前再跟老板对齐范围。
+
+---
+
+## 二十二、外观配置加「恢复默认」按钮（老板把外观调坏了，一键救急）
+
+**起因**：老板在后台"外观配置"里把画布背景色调成了 `#c8c8df`（浅色），但站点是暗色文字主题，结果整站文字糊成一片、等于"改坏了"。需要给后台加一个"恢复默认"入口，避免以后再改坏没法自救。
+
+**做法（小、单一真源、非破坏）**：
+- 后端把内置默认抽成 `DEFAULT_CONFIG`（`{title:智能制造专区, accent:#3b82f6, canvas:#0b0b0f}`），`get_config()` 兜底改用它——以后默认值只有一处。
+- 新增 `POST /api/admin/config/reset`（`@require_admin`）：把默认值写回 `config.json` 并返回（是**覆盖写**不是删文件，保持文件合法、无破坏性删除）。
+- 前端 `AdminPanel` 加 `resetConfig`：二次确认 → 调 reset → 用返回值刷新表单 → `onChange()` 触发重取 `/api/config` 让 `useEffect` 把 CSS 变量重新落回默认 → 在"外观配置"页签"保存"旁加了 `.btn-ghost`「恢复默认」按钮 + 一句救急提示文案。
+
+**验证**：本地冒烟 `smoke_config_reset.py` 7/7 绿（未授权 401、登录、先写坏配置、reset 返回内置默认、`GET /api/config` 随之变默认）；`npm run build` 42 模块通过。上线走 targeted 同步（`app.py` + 重建的 `dist/`）→ 备份回滚镜像 `rollback-cfgreset-*` → `docker compose up -d --build`。真机验收：未带 token 调 reset 401；reset 前线上 config 是 `canvas:#c8c8df`（就是被调坏的那个），reset 后回到 `#0b0b0f`，**生产外观当场修好**。
+
+**留痕**：老板改坏前的值是 `{title:智能制造专区, accent:#3b82f6, canvas:#c8c8df}`，仅背景色一项偏离默认，已记录，若确有需要可再单独调。
