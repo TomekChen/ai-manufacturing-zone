@@ -828,3 +828,42 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **验证**：本地冒烟 `smoke_config_reset.py` 7/7 绿（未授权 401、登录、先写坏配置、reset 返回内置默认、`GET /api/config` 随之变默认）；`npm run build` 42 模块通过。上线走 targeted 同步（`app.py` + 重建的 `dist/`）→ 备份回滚镜像 `rollback-cfgreset-*` → `docker compose up -d --build`。真机验收：未带 token 调 reset 401；reset 前线上 config 是 `canvas:#c8c8df`（就是被调坏的那个），reset 后回到 `#0b0b0f`，**生产外观当场修好**。
 
 **留痕**：老板改坏前的值是 `{title:智能制造专区, accent:#3b82f6, canvas:#c8c8df}`，仅背景色一项偏离默认，已记录，若确有需要可再单独调。
+
+---
+
+## 二十三、日夜间主题切换（默认浅色）+ 外观配置输入校验
+
+**需求**：老板要"右上角一个太阳/月亮按钮，一键切换白天/夜晚"。太阳=整站白底，月亮=当前暗色页；默认进**浅色**（老板拍板"以后主打对外展示，白天档更耐看"）。顺带把上次「外观调坏」的隐患一并堵掉——外观表单加输入校验。
+
+**技术选型（一次定生死，别走岔）**：
+- **不用 `prefers-color-scheme`**，直接 CSS 自定义属性 + `<html data-theme="dark">` 属性选择器覆盖。理由：要显式按钮切换，且要**覆盖管理员自定义的 `canvas` 配置**——媒体查询做不到；用 `data-theme` 属性最直观，SSR 也能同套机制。
+- **默认浅色**意味着要**重设计一整套浅色调色板**，不能沿用暗色色板倒一倒。走 `beautiful-pages` skill 的"风格 A 明亮白底"规范：`--canvas:#ffffff`、`--surface-1:#f7f7f8`、`--surface-2:#f1f1f3`、`--surface-3:#e7e7ea`、`--ink:#18181b`、`--body:#3f3f46`、`--muted:#71717a`、`--hairline:rgba(0,0,0,.09)`、`--accent:#2563eb`。暗色档保留原来那套值不动，只是搬到 `:root[data-theme="dark"]`。
+- **新增四个语义令牌**方便后续复用：`--nav-bg`（导航条半透明背景）、`--panel-fill`（浅/中面板底 3%）、`--panel-fill-2`（hover 面板底 6%）、`--overlay`（模态遮罩）。之前散落在 CSS 里的 `rgba(255,255,255,0.0X)` 白透明"玻璃面板"在浅色下等于**隐形**，全都要 token 化。
+- **管理员 `canvas` 配置只在暗色档生效**——浅色档坚持 CSS 默认 `#ffffff`。这样以后老板即便又给 `canvas` 填了个 `#c8c8df`，也只影响他自己后台预览的暗色页，白天档不会糊。`accent` 两档都覆盖。
+
+**改了哪些文件**（一次 commit `2afbf26`）：
+- `src/style.css`：把原来一个 `:root` 拆成 `:root`（浅色默认）+ `:root[data-theme="dark"]`（暗色覆盖）；`body` 加 `transition: background-color .25s ease, color .25s ease` 让切换有过渡不硬跳；`.navbar` 背景从写死的 `rgba(11,11,15,.85)` → `var(--nav-bg)`；`.qa-answer-content code` 内联码背景 `rgba(255,255,255,.08)` → `var(--panel-fill-2)`；PRD 表格斑马行 `rgba(255,255,255,.02)` → `var(--panel-fill)`。
+- `src/architecture.css`：`.arch-section` 顶部渐变原本写死暗色（`#06080d→#0b0f1a→#0d1117`），改成"浅色渐变 `#fff→#fafafa→#f4f4f5` 做默认 + `:root[data-theme=dark] .arch-section` 覆盖回原暗色"；侧边栏 `#12121a` → `var(--surface-1)`；遮罩 `rgba(0,0,0,.5)` → `var(--overlay)`；一共 15 处 `rgba(255,255,255,0.02~0.12)` 白透明面板/边框（`.arch-org-leaf`、`.arch-pos-tag`、`.arch-dept-header`、`.arch-scenario-box`、`.arch-coord-item`、`.arch-tech-item`（含 hover）、`.arch-dataflow-step`、`.arch-sidebar-close`（含 hover）、`.arch-cap-tag`、`.arch-sidebar-related`、`.arch-sidebar-related-item`（含 hover）、`.arch-metric`、`.arch-flow-step`）全部映射到 `--panel-fill` / `--panel-fill-2` / `--hairline` / `--hairline-strong`；`grep` 复核确认无残留白透明或写死的暗色 hex。
+- `src/main.jsx`：
+  1. 模块顶层加同步初始化——`localStorage.getItem('mz_theme')` 立刻写到 `document.documentElement` 的 `data-theme` 属性，**在 React 挂载前**执行，避免首帧闪一下"错的主题"（FOUC）。
+  2. `App` 组件加 `theme` state（初值从 `<html data-theme>` 读，兜底 `'light'`）；一个 `useEffect` 每次 `theme` 变化时同步属性 + 写 localStorage；`toggleTheme` 切换。
+  3. 图标 `ICONS.sun` / `ICONS.moon` 加进现有 SVG 集，导航右侧新增 `.btn.btn-ghost.btn-sm.theme-toggle` 按钮，`aria-label` + `title` 都写了。当前是暗色就显示太阳（点击切浅色），当前是浅色就显示月亮（点击切暗色）。
+  4. 原本 `useEffect` 里 `config.canvas` 无脑写 CSS 变量的逻辑，改成**只在 `theme === 'dark'` 时**才 `setProperty('--canvas', config.canvas)`；浅色时反过来 `removeProperty('--canvas')` 让 CSS 默认 `#ffffff` 生效。`config.accent` 两档都覆盖不变。effect 依赖数组加进 `theme`，切档时会自动重跑清理。
+  5. `saveConfig`（后台"外观配置"保存）前加校验：`title` 非空；`accent` / `canvas` 若非空必须是 `#rgb` 或 `#rrggbb`，正则 `^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`。不合规 `alert` 中文提示 + 阻断请求，防止再出现"提交 `#c8c8df` 洗白整站"。
+
+**踩过的坑**：
+- **白色透明在浅色主题下"看不见"**——不是 bug，是设计。原来暗色下 `rgba(255,255,255,0.04)` 是"微微亮一点的浮层"，翻到浅色主题下变成"几乎透明的白"叠在白底上，什么都看不见。**必须 token 化**：把 0.02~0.05 归到 `--panel-fill`（浅色档=`rgba(0,0,0,.035)`），0.06~0.12 归到 `--panel-fill-2`（浅色档=`rgba(0,0,0,.06)`）。这样两套主题下"轻微浮层 / 强浮层"两级都有可视对比。
+- **侧边栏关闭按钮 hover 视觉降级**：原本 base 0.06 → hover 0.12，两级都在 `--panel-fill-2` 会没差别。把 hover 改到 `--hairline-strong`（浅色档=`rgba(0,0,0,.16)`、暗色档=`rgba(255,255,255,.14)`）保留对比。
+- **默认浅色 = 要重设计浅色调色板**，不是"把暗色倒过来"。文字色不能纯 `#000`（对比过头、显廉价），面板色不能用纯白叠纯白，hairline 用 `rgba(0,0,0,.09)` 而不是纯灰 `#ddd`——参考 beautiful-pages 里 Linear/Vercel/Notion 的做法。
+
+**构建 & 上线**：`npm run build` 42 模块过，产出 `dist/assets/index-ZAZcovoc.css`（58.87 kB / gzip 10.78 kB）、`index-HxQmxCcY.js`（238.76 kB / gzip 82.64 kB）。**只前端改动**（后端 `app.py` 未动），走 targeted 同步：`dist_theme.tgz`（91KB）sftp 上传 `/tmp` → 服务器 `cp -a source/dist source/dist.bak-<ts>`（324K）→ `rm -rf source/dist; tar xzf /tmp/dist_theme.tgz -C source` → `docker compose up -d --build`。镜像重建，容器 `Recreate → Started`，`Up 3 seconds`；首页 HTTP 200 size=652。
+
+**真机验收**：
+- 首页引用的资源哈希 `index-ZAZcovoc.css` / `index-HxQmxCcY.js` 与本地构建一致（部署没漏）；
+- `curl` 拉线上 CSS grep 到 `data-theme=dark]{--canvas:#0b0b0f;--surface-1:#121218;…}` **和** `data-theme=dark] .arch-section{background:linear-gradient(180deg,#06080d,#0b0f1a 40%,#0d1117)}` 双主题块都在；
+- `curl` 拉线上 JS grep 到 `mz_theme` / `theme-toggle` / `data-theme` 三处关键字都在（切换逻辑打包成功）；
+- 用户在浏览器目视确认"浅深色切换正常"。
+
+**外观输入校验（同一 commit 顺手做了）**：`AdminPanel.saveConfig` 里 `title` 空 → alert "站点标题不能为空"；`accent` / `canvas` 非 `#rgb` / `#rrggbb` 格式 → alert 明确提示样例值。校验放在 `apiPost` 之前，一次不合规直接阻断，不会把脏值写到 `/data/config.json`。
+
+**下一切片候选（回到对齐过的 Slice B 落位）**：既然老板拍板"案例=已部署的项目、复用现有项目矩阵不新建案例库"，接下来给 8 张能力作品集卡片拟文案（AI CAD Studio、铸形、智工AI、snail-ai、智枢/astron、idc-visual、pascal-editor、databuff-apm），逐条给用户过；过完通过 `POST /api/admin/projects` 落 `projects.json`，前端 `AGENTS_FALLBACK` 自动被覆盖。
