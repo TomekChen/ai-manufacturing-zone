@@ -12,6 +12,14 @@ import AdminPRD from './AdminPRD';
 
 const API_BASE = '/api';
 
+/* 主题：在 React 挂载前先把 data-theme 写到 <html>，避免首帧闪一下 */
+try {
+  const saved = localStorage.getItem('mz_theme');
+  document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+} catch {
+  document.documentElement.setAttribute('data-theme', 'light');
+}
+
 /* ===== SVG 图标组件 ===== */
 const Icon = ({ d, size = 22, color = 'currentColor' }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -29,6 +37,8 @@ const ICONS = {
   heart: 'M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.936 0-3.598 1.126-4.312 2.733-.714-1.607-2.376-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z',
   login: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9',
   logout: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 12h9m0 0l-3-3m3 3l-3 3',
+  sun: 'M12 3v1.5M12 19.5V21M4.22 4.22l1.06 1.06M17.72 17.72l1.06 1.06M3 12h1.5M19.5 12H21M4.22 19.78l1.06-1.06M17.72 6.28l1.06-1.06M12 7.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9z',
+  moon: 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z',
 };
 
 /* 主题色：兼容旧的命名色（blue…）与新的十六进制色，统一转成 hex 供 CSS 变量使用 */
@@ -350,8 +360,17 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
   };
 
   const saveConfig = async () => {
+    const hexRe = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+    const title = (localConfig.title || '').trim();
+    if (!title) { alert('站点标题不能为空'); return; }
+    if (localConfig.accent && !hexRe.test(localConfig.accent.trim())) {
+      alert('主色调格式不正确，请使用 #rgb 或 #rrggbb，例如 #3b82f6'); return;
+    }
+    if (localConfig.canvas && !hexRe.test(localConfig.canvas.trim())) {
+      alert('背景色格式不正确，请使用 #rgb 或 #rrggbb，例如 #0b0b0f'); return;
+    }
     try {
-      await apiPost('/admin/config', localConfig, token);
+      await apiPost('/admin/config', { ...localConfig, title }, token);
       onChange();
       alert('配置已保存');
     } catch (err) {
@@ -476,6 +495,13 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [editorProject, setEditorProject] = useState(null); // null | {} | project
+  const [theme, setTheme] = useState(() => {
+    if (typeof document !== 'undefined') {
+      const t = document.documentElement.getAttribute('data-theme');
+      if (t === 'dark' || t === 'light') return t;
+    }
+    try { return localStorage.getItem('mz_theme') === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
+  });
 
   const fetchData = useCallback(async () => {
     try {
@@ -507,16 +533,26 @@ function App() {
   }, [token]);
 
   useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('mz_theme', theme); } catch {}
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
+
+  useEffect(() => {
     if (config?.accent) {
       document.documentElement.style.setProperty('--accent', config.accent);
       document.documentElement.style.setProperty('--accent-deep', adjustColor(config.accent, -20));
       document.documentElement.style.setProperty('--accent-soft', config.accent + '1f');
       document.documentElement.style.setProperty('--accent-glow', config.accent + '40');
     }
-    if (config?.canvas) {
+    // 背景色只在暗色模式下让管理员自定义覆盖，浅色模式沿用 CSS 默认白底
+    if (theme === 'dark' && config?.canvas) {
       document.documentElement.style.setProperty('--canvas', config.canvas);
+    } else {
+      document.documentElement.style.removeProperty('--canvas');
     }
-  }, [config]);
+  }, [config, theme]);
 
   const handleLogout = () => {
     localStorage.removeItem('admin_token');
@@ -563,6 +599,14 @@ function App() {
             <li><a href="#qa">知识问答</a></li>
           </ul>
           <div className="nav-actions">
+            <button
+              className="btn btn-ghost btn-sm theme-toggle"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? '切换到白天模式' : '切换到夜间模式'}
+              aria-label={theme === 'dark' ? '切换到白天模式' : '切换到夜间模式'}
+            >
+              <Icon d={theme === 'dark' ? ICONS.sun : ICONS.moon} size={16} />
+            </button>
             {isAdmin ? (
               <>
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowAdmin(true)}><Icon d={ICONS.settings} size={14} /> 管理</button>

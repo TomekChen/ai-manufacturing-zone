@@ -3,9 +3,12 @@
 /* --- Section 容器 --- */
 .arch-section {
   position: relative;
-  background: linear-gradient(180deg, #06080d 0%, #0b0f1a 40%, #0d1117 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fafafa 40%, #f4f4f5 100%);
   padding: 56px 0 64px;
   overflow: hidden;
+}
+:root[data-theme="dark"] .arch-section {
+  background: linear-gradient(180deg, #06080d 0%, #0b0f1a 40%, #0d1117 100%);
 }
 .arch-section::before {
   content: '';
@@ -225,7 +228,7 @@
   padding: 6px 14px;
   font-size: 15px;
   color: var(--ink, #f0f0f4);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-fill);
   border: 1px solid var(--leaf-color, #64748b);
   border-left-width: 3px;
   border-radius: 6px;
@@ -262,7 +265,7 @@
   font-size: 13px;
   border: 1px solid;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--panel-fill);
   white-space: nowrap;
 }
 
@@ -283,7 +286,7 @@
 .arch-dept-header {
   text-align: center;
   padding: 12px 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-fill);
   border: 1px solid;
   border-radius: 8px;
   display: flex;
@@ -308,8 +311,8 @@
   padding: 12px 8px;
   font-size: 15px;
   color: var(--body, #c8c8d0);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel-fill);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.25s ease;
@@ -388,8 +391,8 @@
   padding: 8px 18px;
   font-size: 15px;
   color: var(--body, #c8c8d0);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel-fill);
+  border: 1px solid var(--hairline);
   border-radius: 16px;
   white-space: nowrap;
 }
@@ -462,15 +465,15 @@
 }
 .arch-tech-item {
   padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel-fill);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   text-align: center;
   transition: all 0.2s ease;
 }
 .arch-tech-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--panel-fill-2);
+  border-color: var(--hairline-strong);
 }
 .arch-tech-item-icon {
   font-size: 30px;
@@ -543,7 +546,7 @@
   padding: 7px 16px;
   font-size: 15px;
   color: var(--body, #c8c8d0);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-fill);
   border-radius: 14px;
   white-space: nowrap;
 }
@@ -557,7 +560,7 @@
 .arch-sidebar-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   z-index: 100;
   animation: archFadeIn 0.2s ease;
 }
@@ -568,8 +571,8 @@
   bottom: 0;
   width: 480px;
   max-width: 92vw;
-  background: #12121a;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-1);
+  border-left: 1px solid var(--hairline-strong);
   z-index: 101;
   overflow-y: auto;
   animation: archSlideIn 0.3s ease;
@@ -617,7 +620,7 @@
   width: 38px;
   height: 38px;
   border: none;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--panel-fill-2);
   border-radius: 8px;
   cursor: pointer;
   position: relative;
@@ -625,7 +628,7 @@
   transition: background 0.2s;
 }
 .arch-sidebar-close:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--hairline-strong);
 }
 .arch-sidebar-close::before,
 .arch-sidebar-close::after {
@@ -692,12 +695,12 @@
   font-size: 15px;
   border: 1px solid;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-fill);
 }
 
 /* 同部门其他智能体 */
 .arch-sidebar-related {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--hairline);
   padding-top: 22px;
 }
 .arch-sidebar-related-title {
@@ -711,13 +714,13 @@
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-fill);
   border-radius: 8px;
   margin-bottom: 10px;
   transition: background 0.2s;
 }
 .arch-sidebar-related-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--panel-fill-2);
 }
 .arch-sidebar-related-emoji {
   font-size: 24px;
@@ -761,8 +764,8 @@
 .arch-metric {
   padding: 16px 8px;
   text-align: center;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--panel-fill);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
 }
 .arch-metric-value {
@@ -797,8 +800,8 @@
   padding: 8px 14px;
   font-size: 14.5px;
   color: var(--ink, #f0f0f4);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--panel-fill);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   white-space: nowrap;
 }
