@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """采集与解析：网页正文抽取（简易 readability）、导航页判定、PDF 文本提取。
 
 这些和"检索策略"无关，只负责把外部资料变成纯文本，交给上层分块。

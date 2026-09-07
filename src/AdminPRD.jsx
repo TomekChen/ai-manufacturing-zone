@@ -33,7 +33,8 @@ function isTableSep(line) {
   return /^\s*\|?[\s:|-]+\|?\s*$/.test(line) && line.includes('-');
 }
 
-function MarkdownView({ text }) {
+// 导出供公开版「售前方案师」弹窗（AgentPRD.jsx）复用，避免两份渲染器漂移
+export function MarkdownView({ text }) {
   const lines = (text || '').replace(/\r\n/g, '\n').split('\n');
   const out = [];
   let i = 0, key = 0;

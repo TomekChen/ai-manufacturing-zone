@@ -9,6 +9,9 @@ import AdminLinks from './AdminLinks';
 import AdminAnalytics from './AdminAnalytics';
 import AdminEval from './AdminEval';
 import AdminPRD from './AdminPRD';
+import AgentPRD from './AgentPRD';
+import DemoBooking from './DemoBooking';
+import AdminBookings from './AdminBookings';
 
 const API_BASE = '/api';
 
@@ -414,6 +417,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           <button className={activeTab === 'eval' ? 'active' : ''} onClick={() => setActiveTab('eval')}>评测</button>
           <button className={activeTab === 'prd' ? 'active' : ''} onClick={() => setActiveTab('prd')}>PRD 生成</button>
           <button className={activeTab === 'links' ? 'active' : ''} onClick={() => setActiveTab('links')}>友情链接</button>
+          <button className={activeTab === 'bookings' ? 'active' : ''} onClick={() => setActiveTab('bookings')}>预约演示</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
         <div className="admin-body">
@@ -458,6 +462,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           {activeTab === 'eval' && <AdminEval token={token} />}
           {activeTab === 'prd' && <AdminPRD token={token} />}
           {activeTab === 'links' && <AdminLinks token={token} />}
+          {activeTab === 'bookings' && <AdminBookings token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">
               <label>站点标题</label>
@@ -495,6 +500,9 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [editorProject, setEditorProject] = useState(null); // null | {} | project
+  const [liveAgents, setLiveAgents] = useState([]); // 已上线智能体注册表（/api/agents）
+  const [activeAgent, setActiveAgent] = useState(null); // 正在体验的智能体
+  const [bookingFor, setBookingFor] = useState(null); // 预约演示：null | 项目对象
   const [theme, setTheme] = useState(() => {
     if (typeof document !== 'undefined') {
       const t = document.documentElement.getAttribute('data-theme');
@@ -522,6 +530,13 @@ function App() {
     const iv = setInterval(fetchData, 30000);
     return () => clearInterval(iv);
   }, [fetchData]);
+
+  // 智能体注册表只需拉一次；失败静默降级为不显示在线入口（不影响卡片展示）
+  useEffect(() => {
+    apiGet('/agents')
+      .then(d => setLiveAgents(Array.isArray(d) ? d.filter(a => a.status === 'live') : []))
+      .catch(() => setLiveAgents([]));
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -630,6 +645,40 @@ function App() {
               {projects?.length > 0 ? '管理员可动态维护项目，系统实时心跳检测运行状态' : '每个智能体专注一个制造场景，协同工作覆盖工厂全链路'}
             </p>
           </div>
+          {liveAgents.length > 0 && (
+            <div className="agents-grid live-row">
+              {liveAgents.map((a) => {
+                const pc = toHex(a.color || 'blue');
+                return (
+                  <div className="agent-card live-agent-card" key={a.id}
+                       style={{ '--proj-color': pc, '--proj-soft': withAlpha(pc, 0.14), '--proj-glow': withAlpha(pc, 0.35) }}>
+                    <div className="agent-header">
+                      <div className="agent-avatar" style={{ background: `linear-gradient(135deg, ${withAlpha(pc, 0.55)}, ${pc})` }}>
+                        <span>{a.emoji || '🤖'}</span>
+                      </div>
+                      <div>
+                        <div className="agent-name">{a.name}</div>
+                        <div className="agent-role">{a.role}</div>
+                      </div>
+                      <span className="live-badge">已上线</span>
+                    </div>
+                    <p className="agent-desc">{a.desc}</p>
+                    {Array.isArray(a.caps) && a.caps.length > 0 && (
+                      <ul className="agent-capabilities">
+                        {a.caps.map((c, j) => <li key={j}>{c}</li>)}
+                      </ul>
+                    )}
+                    <div className="agent-footer">
+                      <div className="agent-status online">
+                        <span className="agent-status-dot"></span>运行中
+                      </div>
+                      <button className="btn btn-primary btn-sm" onClick={() => setActiveAgent(a)}>立即体验</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="agents-grid">
             {displayAgents.map((a, i) => {
               const pc = toHex(a.color);
@@ -668,10 +717,13 @@ function App() {
                 <div className="agent-footer">
                   <div className={`agent-status ${a.alive ? 'online' : 'offline'}`}>
                     <span className="agent-status-dot"></span>
-                    {a.alive ? '运行中' : '离线'}
+                    {a.alive ? '运行中' : '待演示'}
                   </div>
-                  {a.url && (
-                    <a className="agent-link" href={a.url} target="_blank" rel="noreferrer">访问项目 →</a>
+                  {a.alive ? (
+                    a.url && <a className="agent-link" href={a.url} target="_blank" rel="noreferrer">访问项目 →</a>
+                  ) : (
+                    /* 项目未常驻时，把死链换成预约演示入口（提交后邮件通知管理员） */
+                    <button className="btn btn-primary btn-sm" onClick={() => setBookingFor(a)}>预约演示</button>
                   )}
                 </div>
               </div>
@@ -720,6 +772,14 @@ function App() {
           token={token}
           onClose={() => setEditorProject(null)}
           onSave={saveProject}
+        />
+      )}
+      {activeAgent && <AgentPRD agent={activeAgent} onClose={() => setActiveAgent(null)} />}
+      {bookingFor !== null && (
+        <DemoBooking
+          projects={projects || []}
+          preselect={bookingFor?.name || ''}
+          onClose={() => setBookingFor(null)}
         />
       )}
     </div>

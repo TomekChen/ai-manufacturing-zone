@@ -51,16 +51,16 @@ from rag import config     # noqa: E402
 # ---------- 1) 题集加载 ----------
 def test_load_questions_shape():
     qs = ev.load_questions()
-    assert len(qs) == 18, "题集应为 18 题"
+    assert len(qs) == 30, "题集应为 30 题（W4 扩容：q19-q30 数字孪生新语料）"
     ids = [q["id"] for q in qs]
-    assert ids == ["q%02d" % i for i in range(1, 19)], ids
+    assert ids == ["q%02d" % i for i in range(1, 31)], ids
     for q in qs:
         for field in ("id", "question", "reference", "category", "type"):
             assert field in q and q[field], "缺少字段 %s @ %s" % (field, q.get("id"))
         assert q["type"] in ("knowledge", "control"), q["type"]
     know = sum(1 for q in qs if q["type"] == "knowledge")
     ctl = sum(1 for q in qs if q["type"] == "control")
-    assert (know, ctl) == (15, 3), (know, ctl)
+    assert (know, ctl) == (27, 3), (know, ctl)
 
 
 def test_load_questions_missing_file(tmp=None):

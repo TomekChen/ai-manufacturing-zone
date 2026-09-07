@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09, 部分): 文档管理/检索/问答已由 WeKnora 引擎（rag/engine.py）接管；links 管理、问答遥测与意图人设仍在使用。本版仅作回退保留，下一版删除。
 """KnowledgeStore：文件型知识库（文档审核流转 + FAISS 向量检索 + RAG 问答）。
 
 Slice 1 说明：本文件把旧 kb.py 的 KnowledgeStore 原样搬来，只做两处结构变化：
@@ -453,6 +454,12 @@ class KnowledgeStore:
             })
         except Exception:
             logger.warning("问答遥测记录失败（不影响回答）", exc_info=True)
+
+    def log_weknora_ask(self, ask_id, question, hits, refused, answer, t0, turns=0):
+        """W3：WeKnora 引擎作答的遥测记录（retrieval 固定标 weknora，看板可分辨引擎）。
+        分数尺度与自建链路不同，top_score 不记录（None）。任何异常吞掉。"""
+        self._log_ask(ask_id, question, "weknora", hits, None, refused, answer, t0,
+                      intent="knowledge", rewritten=False, turns=turns)
 
     def _clean_history(self, history):
         """清洗前端带来的多轮历史：只留 user/assistant、去空、按 HISTORY_MAX 截最近若干条。"""

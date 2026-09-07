@@ -867,3 +867,202 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **外观输入校验（同一 commit 顺手做了）**：`AdminPanel.saveConfig` 里 `title` 空 → alert "站点标题不能为空"；`accent` / `canvas` 非 `#rgb` / `#rrggbb` 格式 → alert 明确提示样例值。校验放在 `apiPost` 之前，一次不合规直接阻断，不会把脏值写到 `/data/config.json`。
 
 **下一切片候选（回到对齐过的 Slice B 落位）**：既然老板拍板"案例=已部署的项目、复用现有项目矩阵不新建案例库"，接下来给 8 张能力作品集卡片拟文案（AI CAD Studio、铸形、智工AI、snail-ai、智枢/astron、idc-visual、pascal-editor、databuff-apm），逐条给用户过；过完通过 `POST /api/admin/projects` 落 `projects.json`，前端 `AGENTS_FALLBACK` 自动被覆盖。
+
+## 二十四、WeKnora 轻量集成 W1：LITE sidecar 部署上线 + 论文冒烟（官方镜像不可用 → 源码自建 126MB 镜像）
+
+按 `WEKNORA_INTEGRATION_SPEC.md` 开工切片 W1：把 WeKnora LITE 以 sidecar 形式部署到阿里云 ECS（47.115.223.159），与门户 8804 同机不同端口（**8805 仅绑 127.0.0.1，纯内网**，外部摸不到）。W1 的验收口径：建库、上传一篇真实论文 PDF、解析完成、knowledge-search 能召回。另外老板特意要求 W2 开始前先拿**论文/行业报告**这类高质量文档压一压解析器——所以冒烟文档选了 arXiv 数字孪生×智能制造论文（2311.05748，5MB）。
+
+**先踩一跤：官方 v0.7.2 镜像根本不是 LITE-ready**。拉起 `wechatopenai/weknora-app:v0.7.2` 后一切看似正常（健康检查绿），但一注册就炸：`table tenants has no column named api_principal_config`、`no such table: system_settings`、`Failed to create FTS5 table: no such module: fts5`。根因：标准镜像的 sqlite 迁移只到 v2，二进制却要求 v12 的表结构；且编译没带 `sqlite_fts5` tag，FTS5 全文索引直接没有。标准版靠 redis+postgres 兜着，LITE 玩不转。结论：**按 SPEC 的 fallback 路线走源码自建**。
+
+**自建镜像四连坑**（Dockerfile 折了四轮才绿，每轮都有真实报错兜底）：
+
+1. **router.go 隐式依赖 `docs/` 包**——裁剪打包时把 docs/ 排除了，`go build` 直接 `no required module provides package github.com/Tencent/WeKnora/docs`。docs 目录必须进构建上下文。
+2. **sqlite-vec 的 CGO 头文件**——`fatal error: sqlite3.h: No such file or directory`。builder 阶段必须 `apt-get install libsqlite3-dev`（对照上游 docker/Dockerfile.app 确认）。
+3. **gojieba 启动 panic**——二进制编译过了，运行时 `panic: Dictionary file does not exist: /go/pkg/mod/github.com/yanyiwu/gojieba@v1.4.7/deps/cppjieba/dict/jieba.dict.utf8`。gojieba 按**编译期模块缓存绝对路径**找 cppjieba 词典，final stage 必须 `COPY --from=builder /go/pkg/mod/github.com/yanyiwu/ /go/pkg/mod/github.com/yanyiwu/`（照抄上游的做法）。
+4. **runtime 缺动态库**——CGO 二进制动态链接 libsqlite3，`bookworm-slim` 没有。runtime 装 `libsqlite3-0`，顺手补 `tzdata`（Asia/Shanghai 时区）和 `curl`（compose 健康检查要用）。
+
+最终镜像 **126MB**，构建 3 分钟（go mod download 单独成缓存层，重构建只要 12 秒）。compose 把 app 换成 `weknora-lite:local`，清掉被标准版写坏的 sqlite 库重来，起来后日志全是 LITE 特征：`SQLite retriever engine repository with sqlite-vec`、`Populating contentless FTS5 table with bigrams`、`Lite mode, no Redis`，8805 健康检查 200。
+
+**再来一跤：模型创建的 source 字段是个坑**。bootstrap 脚本按直觉给模型填 `source:"aliyun"`（枚举里明明有 `ModelSourceAliyun`），结果上传论文后 `parse_status` 永远卡 `processing`——docreader 4.5 秒就解析完了（8 页、41366 字符、10 张内嵌图都导出了），但 app 侧 chunk→embedding 管线毫无动静。翻源码 `model.go` 的 `CreateModel`：**只有 `source == "remote"` 才置 active，其余一切值都进 ollama 本地下载分支**，embedding 模型状态停在 downloading，管线永远等不到可用模型。改成 `source:"remote"`（DashScope compatible-mode + interface_type openai 是标准路径）立刻通。
+
+**W1 冒烟全链路通过**，干净库上 16 秒跑完：注册 201 → 登录（tenant=1）→ 建 text-embedding-v4（1024 维）+ qwen-plus 双模型 → 建 KB「智能制造专区」→ 上传论文 → **parse completed** → knowledge-search 200 命中 10 条（top3 相关度 0.504/0.500/0.498，内容确实是论文里数字孪生/智能制造段落）。97 个 chunk 全部向量化入库（SQLite+FTS5+sqlite-vec 三件套齐活），处理完 `enable_status` 自动转 enabled。
+
+**资源占用实测**（对 SPEC 的"百级文档够用"判断是个好印证）：app 容器 224MiB + docreader 180MiB ≈ 400MB 总占用；DB 12MB（含 97 chunks + 向量）；切分质量采样看，标题/作者块完整、正文引用规范、参考文献 DOI 保留，平均 ~425 字/chunk，Simple parser 对学术论文的抽取没有乱码断词。**对论文/行业报告类文档，解析质量可以支撑 W2**。
+
+**过程中的工程坑**（跨任务通用，记一笔）：paramiko `nohup` 后台火启存在竞争——子进程可能在重定向前被会话回收干掉（`setsid` 都救不了），`pgrep/pkill -f` 还会自匹配自己的 `bash -lc` 包装。最终稳定模式：**前台流式 channel**（`open_session` + `recv` 循环 + keepalive(30)），长任务全程握着 channel 流式收输出，彻底告别后台任务黑箱。
+
+**下一步（W2）**：rag/engine.py 网关对接 8805（`WEKNORA_ENABLED` 回退开关）+ AdminKB 管理界面重做 + 既有 8 文档迁移。W1 的冒烟结论已满足老板"先验证论文解析质量"的前置条件。
+
+## 二十五、批次1质量测试：7篇CNKI论文切分+问答实测（切分PASS / 问答PASS / 挖出改写随机性根因）
+
+用户按清单下载了 7 篇核心论文（Edge 下载目录 → 重命名 `01~07_短标题_作者年份.pdf` 共 22.1MB），要求先测这批的切分和问答再继续。测试链路全部走 LITE sidecar API（`POST /knowledge-bases/{kb}/knowledge/file` 上传 → 轮询 `parse_status` → sqlite 直查 `chunks` 表统计 → `POST /sessions` + `POST /knowledge-chat/{sid}` SSE 问答）。
+
+**切分结果（PASS）**：7 篇全部 completed，共 842 块，块均长 475~495 字（上限 512），无碎块无超长块；期刊头/DOI/作者/摘要保留完整，图片以 `resource://` 内嵌。02（王柏村英文综述，Engineering 期刊）400 块解析也正常。**解析器不用调参。**
+
+**问答结果（6 题：3 一次过 + 1 负控正确拒答 + 2 排查后过）**：Q3 数字化转型（上海电气案例全命中）、Q4 知识图谱（3大类15小类）、Q5 智能制造特征（HCPS/四维目标）首测直接满分，答案全部带 `<kb doc chunk_id>` 溯源、零编造；Q6 MES/APS 库内无内容，正确拒答还给了 ISA-95 建议。Q1 五维模型、Q2 工业5.0 首测拒答——但库里明明有原文。
+
+**根因排查（本切片最大收获）**：
+- 直查 `/knowledge-search`（不走改写）精准命中 01×6（含「笔者团队前期提出了数字孪生五维模型，包括物理实体、虚拟模型、服务、孪生数据以及它们之间的连接交互」原文）→ 检索层没问题；
+- 拉问答 SSE 流看：首测 Q1 的 14 条引用 **100% 来自 W1 的英文冒烟论文**（向量分 0.35~0.44）；
+- 什么都不改只重新提问 → Q1/Q2 立即满分。
+- 结论：**query_understand（LLM 问题改写）有随机性**，首测偶发把中文问题改写成英文，跨语言向量检索时英文块占优挤掉中文语料。英文冒烟论文是最大噪声源，已删（正确路由是 `DELETE /api/v1/knowledge/{id}`，`/knowledge-bases/{kb}/knowledge/{id}` 是 404）。
+
+**顺手记录的坑**：knowledge-chat SSE 帧是 `event:message` + `data:{json}`，增量在 `response_type:"answer"` 帧的 `content` 字段，`references` 帧的 `knowledge_references` 数组挂在帧顶层（不在 data 里）——按空行分块再 `startswith("data:")` 会漏掉所有帧（块首是 event: 行），必须逐行解析。直查检索是关键词评分（~0.016 量级）、问答管线是向量评分（0.3+ 量级），做评测时两套分不能混比。SFTP 上传中文文件名到 Linux 落盘显示乱码但内容无损，WeKnora 侧 filename 取的是 multipart 里的 UTF-8 名，正常。
+
+**产出**：`批次1切分与问答质量测试报告.md`（项目根）、`batch1_results.json` / `batch1_retest.json`（本地 workspace）。服务器遗留：`uploads/batch1/*.pdf`（保留供重解析）、`batch1_sse_q1~6.txt`、`retest_q1~2.txt`、`.batch1_qa_done` 标记。知识库当前 = 干净的 7 篇批次1语料。
+
+**对 W2 的输入**：① 语料纪律——只进中文目标语料；② engine.py 检索兜底用 `/knowledge-search` 直查（行为确定），问答改写只当增强；③ 高频预置问题可固定检索词绕过改写随机性；④ 文档级 `summary_status=failed` 不影响检索问答，暂不修。
+
+
+## 二十六、W2 管理侧对接：WeKnora 成为知识库引擎（门户改走转发端点）
+
+按 SPEC 切片 W2 完成「管理侧对接」：后台知识库管理页从操作自建 rag 改为操作 WeKnora，旧链路原样保留作回滚网。
+
+**做了什么**：
+- `rag/engine.py`（约 240 行，收口层）：search / chat(SSE) / upload_file / upload_url / list_docs / doc_detail / doc_chunks / delete_doc / reparse / health，全部 WeKnora 调用只准走它；`WEKNORA_ENABLED=false` 一键回退。
+- `app.py` 新增转发端点（全部带 @require_admin）：`/api/admin/kb/weknora/{status,docs,upload,docs/<id>,docs/<id> DELETE,search}`；`/api/admin/kb/crawl` 引擎开启时分流到 WeKnora（异步解析）；`/api/admin/kb/options` 增加 `engine` 字段供前端判模式。
+- `AdminKB.jsx` 双模式：引擎开=横幅(含 8805 控制台外链)+文件上传+URL采集(无分块下拉)+检索调试(直查 knowledge-search)+文档表(解析状态轮询 5s/分块预览/删除)；引擎关=原界面原样。
+- compose：portal 加入外部网络 `weknora-lite_wknet`，env 注入 `WEKNORA_BASE_URL=http://weknora-app:8080` + `WEKNORA_API_KEY` + `WEKNORA_KB_ID`，容器内网直连（8805 不对公网开放）。
+- 服务端专用 API Key（scoped）：`POST /api/v1/tenants/1/api-keys`，capabilities=[retrieve,chat,ingest,manage_kbs] 且限定 KB 白名单，最小权限。
+
+**验收（真机全过）**：admin 登录→options.engine.enabled=true→status healthy→7 篇批次1论文在列→上传冒烟 txt（5 秒解析完）→分块预览 2 块→直查检索命中冒烟文档(0.0164)→删除干净→旧 /api/kb/ask 不受影响（W3 才切）→回退开关演练 OFF/ON 都正常。旧 rag 数据已复制归档到 `data/rag_archive_20260905_w2/`（原件暂留，W3 切问答后再清）。
+
+**坑与教训**：
+1. WeKnora API Key 请求头是 `X-API-Key: sk-...`，**不是** `Authorization: Bearer`（Bearer 走 JWT，两套并行）——拿 Bearer 测 API key 一直 401，翻中间件源码才发现。
+2. 创建 key 的响应里 `api_key` 字段是入库的密文形态（enc:v1:...），真正能用的是 `token` 字段（sk- 开头），且**只在创建响应里出现一次**，列表接口不回显——存错字段只能删了重建。
+3. scoped key 报错信息很误导：不传 capabilities 报 "capabilities are required for scoped API keys"，其实传 `full_access: true` 可以免 capabilities；我们选了 scoped + KB 白名单更安全。
+4. 前端 `fetchOptions` 的 setOptions 是白名单式合并，新加的 `engine` 字段必须显式透传，否则界面永远停在旧模式（上线前自查发现，重打了 dist）。
+5. 文档列表字段是 `file_name`（不是 filename），检索命中是 `knowledge_filename`/`knowledge_title`；分块列表走 `GET /chunks/{knowledge_id}`（SPEC 里写的 /knowledge/{id}/spans 是解析阶段视图，也在，但 chunks 更适合预览）。
+
+**改动文件**：`rag/engine.py`(新)、`app.py`、`src/AdminKB.jsx`、`src/DocPreview.jsx`(状态映射扩展)、`src/style.css`(wk-banner/wk-hit)、`docker-compose.yml`；服务器 `backups/w2/` 留了全量备份（app.py/compose/dist）。
+
+**下一步（W3）**：`/api/kb/ask` 的 knowledge 分支转发 `engine.chat()`（多轮 session_id 由门户保管），前台问答 UI 不变，意图路由回归；W4 切 PRD/评测 + 30 题基线 + 删旧代码。
+
+## 二十七、W3 问答切换：前台知识问答正式走 WeKnora
+
+按 SPEC 切片 W3 完成「问答切换」：`/api/kb/ask` 的 knowledge 意图转发 WeKnora 会话问答，问候/闲聊/超范围仍走原意图链路，前台问答 UI 一行没动。
+
+**做了什么**：
+- `app.py`：ask 入口先做意图分类，knowledge 且引擎开启 → `_ask_weknora()`；会话映射（conversation_id → WeKnora session_id）只存内存（TTL 1 小时、上限 300 条、超量淘汰最旧），重启丢失 = 自动新建会话无感；映射的会话失效时自动丢弃重建重试一次。
+- `rag/store.py`：加 `log_weknora_ask()` 公开遥测入口（retrieval 固定标 `weknora`，top_score 不记——与旧链路分数不同尺度不可比），看板 by_strategy 能分辨两种引擎的量。
+- `rag/engine.py`：`chat()` 修 SSE 答案提取（见坑 1）。
+- `src/KnowledgeQA.jsx`：请求体带 `conversation_id`（前台本来就有会话 id，顺手带上）；UI 零改动。
+- 回答清洗：WeKnora 回答内嵌 `<kb doc=".." chunk_id=".."/>` 内联引用标记，来源列表已单独展示，正则清掉。
+
+**验收（真机 8 项全过）**：知识问答 6.8s 带 14 条来源；**多轮追问成功**——先问五维模型组成、再问"它是谁提出的？"，正确答出陶飞/北航团队/2019（WeKnora 会话上下文生效）；闲聊→smalltalk 原链路；超范围→offtopic 原链路；知识库没有的 MES/APS 题 → WeKnora 给出"未提供相关内容+邻近主题"的得体回答；看板 by_strategy 出现 weknora 条目；回退演练关引擎→同一问题走旧 hybrid 链路→恢复开启→恢复 WeKnora。
+
+**坑与教训**：
+1. **SSE 答案增量的位置**：帧顶层字段是 `response_type`（不是 type），答案增量在 response_type=="answer" 帧的【顶层 content】——而 `frame["data"]` 里只有 event_id。第一次部署按"data 里的 content"取，来源引用全对但答案是空串。教训：拿不准协议形状时，第一件事是 dump 一条真实 SSE 原始流看帧结构（服务器上批次1留下的 batch1_sse_q1.txt 直接救场），别靠记忆猜。
+2. WeKnora 的回答会内嵌 `<kb doc chunk_id/>` 引用标记，markdown 渲染会吞掉但不干净，门户侧统一正则清除。
+3. 看板聚合的键是 `by_strategy`（不是 by_retrieval）。
+4. WeKnora 对知识库没有的问题不是硬拒绝，而是"声明未提供+给邻近主题"——遥测里 refused 只在引用数为 0 时记，所以拒绝率口径和旧链路（检索 0 命中才拒）天然一致。
+
+**改动文件**：`app.py`、`rag/store.py`、`rag/engine.py`、`src/KnowledgeQA.jsx`；服务器 backups/w2/dist_pre_w3 留了切换前 dist。
+
+**下一步（W4，收尾切片）**：PRD 生成器/离线评测的检索底座切到 engine.search（30 题基线对比迁移前后指标），旧 rag 代码标 @deprecated，按 SPEC 回滚表完成收尾。
+
+
+## 二十八、Slice W4 · 评测/PRD 切换 + 收尾（2026-09-07，WeKnora 集成收官）
+
+按 SPEC 切片 W4 完成最后一层切换：PRD 接地检索与离线评测的被测对象都切到 WeKnora，跑 30 题基线对比新旧链路，旧 rag 代码正式标 @deprecated，旧检索数据物理清理归档。WeKnora LITE 集成四个切片（W1 基建→W2 管理→W3 问答→W4 评测/PRD）全部完成。
+
+**做了什么**：
+- `rag/engine.py`：新增 `search_context(query, top_k)`——把 WeKnora 直查结果归一成旧链路 hit 形状 {doc:{title,url}, text, score}，PRD 和评测共用这一个映射函数，调用方代码零改动换底座。
+- `rag/prd.py`：`generate_prd` 接地检索分流——引擎开启走 `engine.search_context`（挂了降级不接地，不挡生成），关闭回退 `store.search`；提示词/流程一行没动。
+- `rag/evaluate.py`：`run_one_question` 分流——引擎开启且判为 knowledge 意图时，回答走 `engine.chat()`（**每题独立会话**，防跨题串上下文）、上下文走 `engine.search_context()`，并按线上口径记遥测；问候/跑题等非知识意图仍走旧意图人设（与 /api/kb/ask 路由行为一致，对照组题才有意义）。四段裁判提示词与打分逻辑零改动；`strategy_snapshot` 新增 engine 字段（weknora-lite / legacy），前端快照条动态渲染自动显示。
+- `rag/eval_questions.json`：题集 18 → **30 题**（q19-q30 新增数字孪生专题，对齐新语料）；27 知识 + 3 对照。12 道新题上传后先跑覆盖预检：knowledge-search 全部命中真实论文（陶飞 2021 / 吴雁 2021 / 李浩 2021），无空转题。
+- @deprecated 标记：14 个旧 rag 模块头部插入 DEPRECATED(W4 2026-09) 注释；`store.py` 用「部分退役」措辞——links 管理、遥测、意图人设还在用，只有文档管理/检索/问答退役。
+- 旧数据物理清理：`kb_docs.json / kb_chunks.json / kb_index.faiss` mv 进 `data/rag_archive_20260907_w4/`（kb_raw.json 在 W2 已归档所以缺席；links.json / kb_meta.json / 遥测 / 评测历史保留）。是 mv 不是 rm，回滚 = 拷回三件套再重启。
+
+**30 题基线对比（同一题集，旧链路 vs WeKnora，双轮真机）**：
+
+| 指标（overall，只算 knowledge 题） | 旧链路 | WeKnora | 变化 |
+|---|---|---|---|
+| 忠实度 | 0.889 | 0.519 | -0.37 |
+| 答案相关性 | 0.964 | 0.914 | -0.05 |
+| 上下文精确率 | 0.024 | 0.419 | **+0.39** |
+| 上下文召回率 | 0.007 | 0.444 | **+0.44** |
+
+**怎么解读**：旧链路检索层对这套题接近全盲（精确率/召回≈0，因为旧语料就是 8 篇门户快照，跟题集主题错位），它的高忠实度其实是「不会就拒答」撑起来的。WeKnora 检索层有真实命中（+0.4 量级），但忠实度被拉低——WeKnora chat 对语料没覆盖的题（能耗/标准/KPI/安全）**不拒答，而是用大模型世界知识硬答**，裁判判为编造。分类别看得更直白：数字孪生专题（有语料）10 题里 7 题显著提升、q19/q21/q24/q27 直逼满分 0.988；语料没覆盖的类别显著下降。**结论：引擎方向正确，短板从「检索不出」变成「语料外不拒答」**——后续优化方向明确：门户侧引用数为 0 时直接给拒答话术（不透传 WeKnora 的自由发挥），或收紧 WeKnora 会话提示词。对照组自检正常（旧链路 0.75 / WeKnora 0.44 均值，跑题题 q06/q13 两轮一致）。
+
+**验收对照 SPEC 第八节**：PRD 生成 grounded=true 且 hits=10、来源为 WeKnora 语料（PRD 7024 字）✓；评测 30 题四指标出数、报告带 engine 标注 ✓；清理后冒烟：知识问答 engine=weknora 带 14 来源、smalltalk 原链路 ✓；本地单测 83/83（test_prd 44 + test_rag_eval 24 + test_rag_intents 15）✓。
+
+**坑与教训**：
+1. **服务器构建上下文是 source/ 子目录**：rag/ 在 /data/projects/ai-manufacturing-zone/source/rag/，sftp 直传项目根的 rag/ 会静默传错地方（第一次部署备份文件数为 0 就是这么发现的）。
+2. **docker compose exec 的 /tmp 和宿主机 /tmp 是两个世界**：脚本 sftp 到宿主机 /tmp 后 exec 报 No such file，必须先 `docker compose cp` 进容器；容器重建后容器侧 /tmp 还会被清空，要重拷。
+3. 容器里跑 `python /tmp/xxx.py` 时 sys.path[0] 是 /tmp 不是 /app，import rag 前必须 `sys.path.insert(0, "/app")`。
+4. nohup + & 启动的容器内长任务偶发静默死亡（日志都没有）；PRD 冒烟改**前台 exec 直跑**（SSH 读等 7 分钟超时内）一次成功。fire-and-forget 的正确姿势：`> log 2>&1 < /dev/null &`，且 paramiko 别把 stdout 读到 EOF——读到 EOF 会等后台进程退出，直接超时。
+5. WeKnora 评测每题 ~33s（SSE 问答+直查+4 次裁判），30 题一轮 16.7 分钟，比旧链路（7.8 分钟）慢一倍——离线评测可接受，线上问答不受影响（W3 实测 6.8s）。
+
+**已知限制 / 后续建议**：
+- WeKnora 语料外硬答是忠实度掉分的根因，W3 已有 refused 口径但答案仍透传——建议下一版门户侧对「引用=0 的知识题」直接给拒答话术。
+- PRD sources 未按文档去重（同一篇 PDF 多个分块会重复出现），纯展示层小瑕疵。
+- 回滚网语义变化：WEKNORA_ENABLED=false 代码链路仍在，但旧语料已归档，完整回滚需先从 rag_archive_20260907_w4 拷回三件套再重启（与 SPEC「归档不删」一致）。
+
+**改动文件**：`rag/engine.py`、`rag/prd.py`、`rag/evaluate.py`、`rag/eval_questions.json`、14 个旧模块 DEPRECATED 头注释、`tests/test_rag_eval.py`（题集断言 18→30）；服务器备份 backups/w4/（18 个被替换文件的改动前版本）+ data/rag_archive_20260907_w4/（旧检索三件套）。
+
+## 二十九、Slice A1 · 曳光弹：第一个正式垂直智能体「售前方案师」上线（2026-09-08）
+
+**背景**：W4 收官后讨论垂直智能体方向，确定分期 A1 曳光弹（激活卡片）→ A2 编排层（planner+注册表框架）→ A3 第二个垂直智能体 → A4 评测驱动自进化（30 题评测当回归安全网，掉分不放行）。A1 的目标一句话：**把首页智能体卡片从"展示"变成"入口"**。
+
+**功能清单（谁要干什么）**：
+- 访客在首页「项目矩阵」区看到一张带"已上线"徽标的在线智能体卡片（售前方案师），点"立即体验"直接弹窗用，不用登录后台。
+- 访客填写公司/行业/业务介绍，选择引导或规范化模式，生成一份面向该客户的《AI 智能体平台功能需求 PRD》，可复制全文或下载 .md。
+- 管理员在后台的 PRD 生成器保持原样，两边共用同一引擎，互不影响。
+- 不做的（边界）：不做多智能体编排、不做智能体间通信、注册表暂写死在 app.py（A2 再抽框架）——一个实现不预建抽象。
+
+**实现（垂直切片）**：
+- 后端 `app.py`：`GET /api/agents` 公开注册表（AGENT_REGISTRY，一条记录 = id/name/role/emoji/color/desc/caps/status/endpoint，status=live 的会被首页渲染成入口）；`POST /api/agents/prd/run` 公开版 PRD 生成，与 admin 版同一 `kb_prd.generate_prd`，限流从紧：每 IP 每小时 5 次。
+- **顺带修了一个真隐患**：原 `rate_limited()` 所有端点共用一个按 IP 计数的字典——知识问答（10 次/分）会把公开 PRD 的 5 次/小时额度吃掉。给 `rate_limited` 加了 `bucket` 参数，公开 PRD 用独立桶 `agent_prd`，旧端点默认桶行为不变。
+- 前端 `AgentPRD.jsx`（新）：公开版 PRD 弹窗，复用 AdminPRD 导出的 `MarkdownView`（导出而非复制，避免两份渲染器漂移），无需 admin token；说明文字放大到 14px（面向客户可读性）。
+- 前端 `main.jsx`：挂载时拉一次 `/api/agents`（失败静默降级，不影响原有卡片），在项目卡片网格上方渲染"在线智能体"行；`style.css` 加已上线徽标/弹窗样式约 20 行。
+
+**测试结果**：
+- 本地：py_compile 通过；test_prd 44/44；vite build 43 modules；自写冒烟 10/10（注册表形状/空入参 400/admin 401/限流 429/桶隔离结构断言，generate_prd 打桩零 LLM 成本）。
+- 真机：容器重建后首页 200 且引用新包 index-Bbhljq53.js；`/api/agents` 返回注册表；公开端点空入参 400；admin 版未登录仍 401；**真机真实生成一次：grounded=True，hits=10，prd_len=8013**（知识库接地生效）。浏览器实开页面标题正常。
+- 视觉验证兜底：QoderWork 截图通道故障（sharp 依赖缺失）+ SPA 元素树截断，改用等效验证——从服务器拉正在服役的 JS 包确认包含 立即体验/已上线/售前方案师/agent-prd-modal/prd-run 等新字符串，加上注册表端点返回 live 数据，渲染链路成立。
+
+**坑与教训**：
+1. **本地冒烟先查 key**：写冒烟脚本时没注意本机配了 DASHSCOPE_API_KEY，合法入参循环直接打了 2-3 次真 LLM 才被杀掉。零成本冒烟必须先打桩 `has_api_key`/`generate_prd`，别赌环境变量。
+2. 服务器 source/ 下没有 src/（前端源码从不上服务器，本地构建只传 dist/），sftp 往 source/src/ 传文件直接 ENOENT；部署脚本先探路再上传。
+3. 限流字典跨端点共享这种"以前没事"的隐患，会在新端点把限额收紧时变成用户可见 bug——加严限额前先审共享状态。
+4. 截图通道坏掉时的真机验证替代方案：拉线上静态资源 grep 关键字符串 + curl 端点链路，比只看 HTTP 200 强得多。
+
+**已知限制**：限流是进程内存态，重启清零；注册表硬编码在 app.py（A2 迁注册表框架）；弹窗在窄屏（<720px）下未做专门适配（modal 自带 overflow 滚动）。
+
+**改动文件**：`app.py`（注册表+公开端点+rate_limited bucket）、`src/AgentPRD.jsx`（新）、`src/main.jsx`、`src/AdminPRD.jsx`（导出 MarkdownView）、`src/style.css`；服务器备份 backups/a1/（app.py + dist）。
+
+
+---
+
+## §三十 · A2 编排层（注册表框架 + planner）+ 预约演示（邮件通知）
+
+**日期**：2026-09-08　**切片**：A2 + 预约演示　**状态**：已部署真机验证 ✅
+
+**功能清单**：
+1. A2 编排层：新建 `agents/` 包（base 统一契约 / registry 注册表 / runtime KB 注入 / prd_advisor 收编），app.py 硬编码注册表迁出，import 即注册。
+2. 新端点：`GET /api/agents`（注册表，驱动首页）、`POST /api/agents/dispatch`（planner：triggers 关键词路由，支持 auto_run 代跑）、`POST /api/agents/<id>/run`（通用运行）、`POST /api/agents/prd/run`（A1 兼容别名，返回扁平形状给旧缓存页面）。
+3. 预约演示：`POST /api/demo/booking`（限流 3次/h/IP）→ `notify.py` QQ SMTP 465 SSL 真邮件 → 落盘 `data/demo_bookings.json`（留 200 条）；`GET /api/admin/demo/bookings` 后台列表。
+4. 前端：离线项目卡「离线」→「待演示」，死链「访问项目」换成「预约演示」按钮 → DemoBooking 弹窗；AgentPRD 改用注册表 endpoint + 新契约解包；AdminPanel 新增「预约演示」页签（AdminBookings）。
+5. compose 透传 SMTP_HOST/PORT/USER/PASS/NOTIFY_TO；服务器 Dockerfile 增补 `COPY source/notify.py` 与 `COPY source/agents/`；.env 追加 SMTP_USER/SMTP_PASS（授权码）。
+
+**背景结论（对用户两个疑问的答案）**：
+- 项目卡全「离线」是**真实的**：演示容器平时被销毁省磁盘，心跳系统本身健康（last_check 每分钟刷新）。
+- 「预约演示功能之前做过、还测过邮件」是**记忆偏差**：全库（代码/DEV_LOG/记忆）无任何 smtp/booking 痕迹，此前只做过 Server酱/Win通知实验；本切片为首次实现。
+
+**测试结果**：test_agents 51/51、test_booking 28/28 全过（邮件打桩，不发真件）；回归 test_prd 44/44、test_rag_unit 11/11；build 45 模块。真机：注册表/triggers 正确，dispatch 命中，400/404 语义正确，新 bundle 上线，**真预约邮件已发出（notified=true，QQ 邮箱 465 SSL 通）**，admin 列表 login-token 后 200，真生成一次（grounded=True hits=10 refs=10 prd_len=7798 confidence=0.6）。
+
+**坑与教训**：
+1. **_run_agent 元组返回吞状态码**：辅助函数返回 `(jsonify(...), 400)`，调用方只 `return res` → 400/502 全变 200；dispatch auto_run 更是把 Response 对象塞进 jsonify 直接 500。教训：辅助函数要**把状态码写回 Response 本体**再返回；单测先行这次真的抓到了。
+2. **服务器 Dockerfile 与本地是两套**：服务器版在项目根、路径全带 `source/` 前缀（context=项目根）；本地版 context=项目根本身。改 Dockerfile 必须分头维护，不能拿本地的直接覆盖服务器。
+3. `curl -w '%{http_code}'` 出现在 Python %-格式串里必炸（`%{` 被当格式符）——W4 踩过，A2 部署脚本又踩，验证命令一律改字符串拼接。
+4. **token 公式有"双盐"**：`hash_password(account+password+SECRET_KEY)` 内部再拼一次 SECRET_KEY = sha256(A+P+S+S)。外部验算只拼一次必 401；验 admin 鉴权最稳的姿势是**直接调 login 端点拿 token**。
+5. `/api/options` 是 W4 冒烟脚本的幻影路径（app 里从不存在，落 SPA 兜底返回 index.html 还 200）——冒烟命令要对着路由表写，别互相抄。
+6. 本机测试顺序陷阱：`register()` 对纯空白 id 原先不报错，残缺类混进注册表让 route_task AttributeError——注册器现在对 id 做 strip+非空强校验。
+
+**已知限制 / 后续建议**：
+- 预约邮件同步发送（SMTP 3-8s），极端慢时用户等待变长；量大可改后台线程+前端轮询。
+- 预约列表无删除/导出；限流内存态重启清零（沿用现状）。
+- dispatch 的 planner 目前是关键词匹配，多智能体并存后的优先级/协同留待 A3。
+
+**改动文件**：`agents/`（新，5 文件）、`notify.py`（新）、`app.py`（agent/booking 端点 + _run_agent 修复）、`Dockerfile`、`docker-compose.yml`、`src/AgentPRD.jsx`、`src/DemoBooking.jsx`（新）、`src/AdminBookings.jsx`（新）、`src/main.jsx`、`src/style.css`、`tests/test_agents.py`（新）、`tests/test_booking.py`（新）；服务器 backups/a2/（app.py、Dockerfile、docker-compose.yml、dist）。

@@ -1050,6 +1050,18 @@ a.qa-source-name:hover { color: var(--accent); }
 }
 .admin-table select:focus, .kb-debug-row select:focus { outline: none; border-color: var(--accent); }
 
+/* ===== WeKnora 引擎模式（W2） ===== */
+.wk-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline); background: var(--panel-fill);
+}
+.wk-banner strong { color: var(--ink); font-size: 14px; }
+.wk-hit { padding: 8px 0; border-top: 1px dashed var(--hairline); }
+.wk-hit:first-child { border-top: none; }
+.wk-hit-name { margin-left: 8px; font-size: 13px; color: var(--ink); }
+.wk-hit-content { margin-top: 4px; font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+
 /* ===== 前台回答 👍/👎 反馈（Slice 4） ===== */
 .qa-feedback { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
 .qa-feedback-tip { font-size: 12px; color: var(--muted); }
@@ -1340,3 +1352,38 @@ a.qa-source-name:hover { color: var(--accent); }
   .prd-modes { grid-template-columns: 1fr; }
   .prd-doc { padding: 16px 14px; }
 }
+
+/* ===== 在线智能体（A1 曳光弹：卡片从展示变入口） ===== */
+.live-row { margin-bottom: 34px; }
+.live-agent-card .agent-header { flex-wrap: nowrap; }
+.live-badge {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  height: 24px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: #16a34a;
+  background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35);
+}
+@media (max-width: 720px) {
+  .live-row { margin-bottom: 24px; }
+}
+
+/* 售前方案师 · 公开在线体验弹窗（说明文字 ≥14px，可读性优先） */
+.agent-prd-modal { max-width: 960px; }
+.agent-prd-body { padding: 20px 24px 24px; }
+.agent-prd-modal .prd-intro-sub { font-size: 14px; }
+.agent-prd-modal .prd-field label { font-size: 14px; }
+.agent-prd-modal .prd-count, .agent-prd-modal .prd-loading { font-size: 13px; }
+
+/* ===== 预约演示（离线项目卡 → 预约入口；提交后邮件通知管理员） ===== */
+.booking-form .admin-form, form.booking-form { padding-top: 4px; }
+.booking-intro {
+  font-size: 14px; line-height: 1.7; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--hairline);
+  border-radius: var(--radius-xs); padding: 12px 14px; margin-bottom: 4px;
+}
+.booking-intro b { color: var(--ink-strong); }
+.booking-hint { font-size: 12px; color: var(--faint); margin-top: -8px; }
+.booking-done { padding: 36px 24px 32px; text-align: center; }
+.booking-done-icon { font-size: 44px; line-height: 1; margin-bottom: 14px; }
+.booking-done-title { font-size: 18px; font-weight: 700; color: var(--ink-strong); margin-bottom: 8px; }
+.booking-done-sub { font-size: 14px; line-height: 1.7; color: var(--muted); margin-bottom: 22px; }

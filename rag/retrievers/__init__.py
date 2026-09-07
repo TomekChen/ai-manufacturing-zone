@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """检索策略子包。import 本包即触发 vector/bm25/hybrid 自注册。"""
 from .base import Retriever, RETRIEVERS        # noqa: F401
 from . import vector                           # noqa: F401 触发注册

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """百炼（DashScope 兼容模式）底层请求 + 文本嵌入。
 
 embed_texts：批量嵌入（每批最多 10 条，API 硬限制），返回已 L2 归一化的 float32 矩阵。

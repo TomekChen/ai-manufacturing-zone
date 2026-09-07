@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """向量检索的薄适配器。
 
 真正的 FAISS + 百炼嵌入逻辑留在 store 里（要网络/索引），

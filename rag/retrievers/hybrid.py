@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """混合检索：向量 + BM25 两路召回，用 RRF 融合排名。
 
 两路各取 top_n*2，融合后截断到 top_k，互补召回盲区。

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """BM25 关键词检索：jieba 中文分词 + rank_bm25。
 
 对精确数字、专有名词（如"营业收入""研发费用"）比纯向量更稳，与向量互补。

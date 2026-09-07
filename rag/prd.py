@@ -9,6 +9,8 @@
 
 行业接地：生成前先用知识库检索相关片段注入为"行业参考与案例"，呼应"做智能制造
 know-how 专家"。知识库为空或检索异常时自动降级为不接地，不影响生成。
+W4：接地检索底座切到 WeKnora 直查（engine.search_context）；WEKNORA_ENABLED=false
+时回退旧链路 store.search（回滚网），其余提示词/流程不动。
 
 Seam（可测边界）：has_api_key / clean_input / build_system_prompt / format_kb_context /
 build_user_prompt / build_prd_messages / generate_prd —— 全可离线打桩（假 chat + 假 store），
@@ -17,6 +19,7 @@ build_user_prompt / build_prd_messages / generate_prd —— 全可离线打桩�
 import os
 
 from . import config
+from . import engine as wk_engine
 from .llm import chat  # 单测会 monkeypatch 本模块的 chat 名字
 
 
@@ -153,13 +156,20 @@ def _extract_sources(hits):
 def generate_prd(store, payload):
     """校验 -> 知识库接地检索(容错) -> 组提示词 -> 调 LLM -> 返回契约结构。
 
-    chat 异常向上抛（端点映射 502）；store.search 异常吞掉降级为不接地。
+    chat 异常向上抛（端点映射 502）；检索异常吞掉降级为不接地。
+    W4：WEKNORA_ENABLED 开启时接地检索走 WeKnora 直查（search_context），关闭时
+    回退旧链路 store.search（回滚网）。
     """
     data = clean_input(payload)
 
     hits = []
-    if store is not None:
-        query = " ".join(x for x in (data["company"], data["industry"], data["business"][:120]) if x)
+    query = " ".join(x for x in (data["company"], data["industry"], data["business"][:120]) if x)
+    if wk_engine.is_enabled():
+        try:
+            hits = wk_engine.search_context(query, top_k=config.PRD_TOP_K) or []
+        except Exception:
+            hits = []
+    elif store is not None:
         try:
             hits = store.search(query, top_k=config.PRD_TOP_K) or []
         except Exception:

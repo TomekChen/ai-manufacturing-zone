@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """语义（段落）分块：以空行为段落边界，尽量整段合并到 max_size 以内，
 不切断段落；单段超长时回落固定窗口，保证块不超标。
 

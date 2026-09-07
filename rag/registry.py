@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """通用注册表（轻量工厂）。
 
 三个可插拔维度（chunker / retriever / reranker）共用这一套，避免各写一份样板。

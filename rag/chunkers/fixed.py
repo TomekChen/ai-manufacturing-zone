@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """固定窗口分块：滑动窗口 + 重叠，尾部尽量回缩到自然断点。
 
 与旧 kb.py 的 split_text 行为完全一致（默认 size=600 / overlap=80），

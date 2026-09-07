@@ -14,7 +14,7 @@
     ],
     "color": "purple",
     "alive": false,
-    "last_check": "2026-08-27T13:36:38.050194"
+    "last_check": "2026-09-08T01:23:07.097164"
   },
   {
     "id": "b8acd9e402048983",
@@ -25,8 +25,8 @@
     "image": "/uploads/b302f8d9f3f5634c.png",
     "caps": [],
     "color": "blue",
-    "alive": true,
-    "last_check": "2026-08-27T13:36:38.070226",
+    "alive": false,
+    "last_check": "2026-09-08T01:23:11.188209",
     "heartbeatUrl": "http://127.0.0.1:8800/"
   }
 ]

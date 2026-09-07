@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import threading
@@ -14,8 +15,12 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 import kb
+import notify
 from rag import evaluate as kb_eval
 from rag import prd as kb_prd
+from rag import engine as wk_engine
+from rag.intents import classify_intent
+import agents  # import 即注册（agents/registry.py 底部挂载所有智能体实现）
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 全局上传上限 20MB（知识库文档放宽到 10MB）
@@ -327,21 +332,25 @@ def api_admin_login():
 
 # 全局知识库存储（数据文件在 data/ 挂载卷内，容器重建不丢）
 KB = kb.KnowledgeStore(DATA_DIR)
+# 智能体运行时注入：WeKnora 关闭时 PRD 回退检索用（agents 包不反向依赖 app）
+agents.runtime.store = KB
 
 # 公开问答的简单内存限流：每 IP 每分钟最多 10 次
+# bucket 隔离各端点额度（A1 起公开 PRD 每小时 5 次，若与问答共用一个桶会被高频问答吃掉额度）
 _ask_limits = {}
 _ask_limit_lock = threading.Lock()
 
 
-def rate_limited(ip, limit=10, window=60):
+def rate_limited(ip, limit=10, window=60, bucket="default"):
     now = time.time()
     with _ask_limit_lock:
-        lst = [t for t in _ask_limits.get(ip, []) if now - t < window]
+        store = _ask_limits.setdefault(bucket, {})
+        lst = [t for t in store.get(ip, []) if now - t < window]
         if len(lst) >= limit:
-            _ask_limits[ip] = lst
+            store[ip] = lst
             return True
         lst.append(now)
-        _ask_limits[ip] = lst
+        store[ip] = lst
         return False
 
 
@@ -390,9 +399,75 @@ def api_kb_upload():
                     "message": "上传成功，等待管理员审核后进入知识库"})
 
 
+# ── W3：WeKnora 会话映射（conversation_id -> weknora session_id）─────────────
+# 门户保管映射：同一前台会话的多轮提问复用同一个 WeKnora session，由 WeKnora
+# 侧维护上下文。映射只存内存（重启丢失 = 自动新建会话，无感）；超量淘汰最旧。
+_WK_SESSION_TTL = 3600          # 1 小时不说话即弃
+_WK_SESSION_MAX = 300
+_wk_sessions = {}               # {conversation_id: [session_id, last_ts]}
+_wk_sessions_lock = threading.Lock()
+# WeKnora 回答里的内联引用标记（<kb doc=".." chunk_id=".."/>），前台来源列表
+# 已单独展示，这里清掉避免以原始标签形式混进正文
+_WK_CITE_RE = re.compile(r"<kb\b[^>]*/>|<kb\b[^>]*>.*?</kb>", re.S)
+
+
+def _wk_session_get(conversation_id):
+    if not conversation_id:
+        return None
+    with _wk_sessions_lock:
+        entry = _wk_sessions.get(conversation_id)
+        if entry and time.time() - entry[1] < _WK_SESSION_TTL:
+            return entry[0]
+        if entry:
+            _wk_sessions.pop(conversation_id, None)
+    return None
+
+
+def _wk_session_save(conversation_id, session_id):
+    if not conversation_id or not session_id:
+        return
+    with _wk_sessions_lock:
+        _wk_sessions[conversation_id] = [session_id, time.time()]
+        if len(_wk_sessions) > _WK_SESSION_MAX:
+            oldest = min(_wk_sessions, key=lambda k: _wk_sessions[k][1])
+            _wk_sessions.pop(oldest, None)
+
+
+def _ask_weknora(question, history, conversation_id):
+    """W3：知识问答转发 WeKnora（意图已判定为 knowledge）。
+    返回与旧链路同构的 JSON：{answer, sources, retrieval, intent, ask_id}。"""
+    t0 = time.perf_counter()
+    ask_id = secrets.token_hex(8)
+    session_id = _wk_session_get(conversation_id)
+    try:
+        answer, refs, session_id = wk_engine.chat(question, session_id=session_id)
+    except wk_engine.EngineError as e:
+        # 映射的会话可能已失效（WeKnora 重启/过期）：丢弃映射重试一次
+        if not session_id:
+            return jsonify({"error": "WeKnora 问答失败：%s" % str(e)[:120]}), 502
+        try:
+            answer, refs, session_id = wk_engine.chat(question, session_id=None)
+        except wk_engine.EngineError as e2:
+            return jsonify({"error": "WeKnora 问答失败：%s" % str(e2)[:120]}), 502
+    _wk_session_save(conversation_id, session_id)
+    answer = _WK_CITE_RE.sub("", answer or "").strip()
+    sources = [{"title": r.get("title") or "(未命名)", "snippet": r.get("snippet") or ""}
+               for r in refs]
+    hits = len(sources)
+    # 无引用 = 答案无据可依（WeKnora 的拒绝式回答），遥测按 refused 记
+    KB.log_weknora_ask(ask_id, question, hits, refused=hits == 0, answer=answer,
+                       t0=t0, turns=len(history or []))
+    return jsonify({
+        "answer": answer, "sources": sources, "retrieval": "weknora",
+        "intent": "knowledge", "ask_id": ask_id, "engine": "weknora",
+    })
+
+
 @app.route("/api/kb/ask", methods=["POST"])
 def api_kb_ask():
-    """知识库问答：意图路由（知识/闲聊/超范围）+ 多轮上下文 + 可插拔检索 + LLM 生成。"""
+    """知识库问答：意图路由（知识/闲聊/超范围）+ 多轮上下文 + 可插拔检索 + LLM 生成。
+    W3：引擎开启时 knowledge 意图转发 WeKnora chat；问候/闲聊/知识外仍走原意图链路；
+    WEKNORA_ENABLED=false 一键回到全旧链路（回滚网）。"""
     if rate_limited(request.remote_addr, limit=10, window=60):
         return jsonify({"error": "提问太频繁，请稍后再试"}), 429
     payload = request.get_json(force=True, silent=True) or {}
@@ -403,6 +478,14 @@ def api_kb_ask():
         return jsonify({"error": "问题太长（最多 500 字）"}), 400
     retrieval = _clean_choice(payload.get("retrieval"), kb.RETRIEVAL_OPTIONS)
     history = payload.get("history") if isinstance(payload.get("history"), list) else None
+    conversation_id = (payload.get("conversation_id") or "").strip()[:64]
+    if wk_engine.is_enabled():
+        try:
+            intent = classify_intent(question, has_history=bool(history))
+        except Exception:
+            intent = "knowledge"  # 路由器自身异常时按知识问答兜底
+        if intent == "knowledge":
+            return _ask_weknora(question, history or [], conversation_id)
     try:
         result = KB.ask(question, history=history, retrieval=retrieval)
     except RuntimeError as e:
@@ -508,9 +591,23 @@ def _crawl_to_kb(url, doc_type="url", chunking=None):
 @require_admin
 def api_admin_kb_crawl():
     payload = request.get_json(force=True, silent=True) or {}
+    url = (payload.get("url") or "").strip()
+    # WeKnora 引擎开启时采集走 WeKnora（异步解析，入库即 approved，无审核流）
+    if wk_engine.is_enabled():
+        if not url.startswith(("http://", "https://")):
+            return jsonify({"error": "地址必须以 http:// 或 https:// 开头"}), 400
+        try:
+            doc = wk_engine.upload_url(url)
+        except wk_engine.EngineError as e:
+            return jsonify({"error": str(e)}), 502
+        return jsonify({
+            "doc": {"id": doc.get("id"), "title": doc.get("title") or url,
+                    "parse_status": doc.get("parse_status") or "pending"},
+            "message": "已提交 WeKnora 解析（异步），状态稍后自动刷新",
+        })
     chunking = _clean_choice(payload.get("chunking"), kb.CHUNKING_OPTIONS)
     try:
-        doc = _crawl_to_kb(payload.get("url"), chunking=chunking)
+        doc = _crawl_to_kb(url, chunking=chunking)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -521,12 +618,14 @@ def api_admin_kb_crawl():
 @app.route("/api/admin/kb/options", methods=["GET"])
 @require_admin
 def api_admin_kb_options():
-    """后台下拉框数据源：可选的分块/检索策略及默认值（单一事实来源=注册表，前端不再硬编码）。"""
+    """后台下拉框数据源：可选的分块/检索策略及默认值（单一事实来源=注册表，前端不再硬编码）。
+    engine 字段供前端判定走 WeKnora 模式还是旧模式（WEKNORA_ENABLED 回退开关）。"""
     return jsonify({
         "chunking": kb.CHUNKING_OPTIONS,
         "default_chunking": kb.DEFAULT_CHUNKING,
         "retrieval": kb.RETRIEVAL_OPTIONS,
         "default_retrieval": kb.DEFAULT_RETRIEVAL,
+        "engine": wk_engine.status(),
     })
 
 
@@ -564,6 +663,99 @@ def api_admin_kb_rebuild_doc(doc_id):
         "doc": result["doc"], "stats": KB.stats(), "re_sharded": result["re_sharded"],
         "message": "单篇重建完成：%d 块" % result["chunks"],
     })
+
+
+# ── WeKnora 引擎转发（W2）：管理界面在引擎开启时改走这组端点 ─────────────────
+# SPEC：所有 WeKnora 调用收口在 rag/engine.py；WEKNORA_ENABLED=false 时前端
+# 自动回退旧界面（下方旧端点原样保留，就是回滚网本身）。
+
+@app.route("/api/admin/kb/weknora/status", methods=["GET"])
+@require_admin
+def api_admin_kb_weknora_status():
+    """引擎概览：是否启用/是否已配置/健康检查。"""
+    st = wk_engine.status()
+    st["healthy"] = wk_engine.health() if st["configured"] else None
+    return jsonify(st)
+
+
+@app.route("/api/admin/kb/weknora/docs", methods=["GET"])
+@require_admin
+def api_admin_kb_weknora_docs():
+    """WeKnora 文档列表（含解析状态）。"""
+    if not wk_engine.is_enabled():
+        return jsonify({"error": "WeKnora 引擎未启用"}), 409
+    try:
+        return jsonify(wk_engine.list_docs())
+    except wk_engine.EngineError as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route("/api/admin/kb/weknora/upload", methods=["POST"])
+@require_admin
+def api_admin_kb_weknora_upload():
+    """上传文档到 WeKnora（解析异步，前端轮询刷新状态）。"""
+    if not wk_engine.is_enabled():
+        return jsonify({"error": "WeKnora 引擎未启用"}), 409
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "没有收到文件"}), 400
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_KB_EXTS:
+        return jsonify({"error": "仅支持 TXT / Markdown / PDF 文件"}), 400
+    blob = file.read()
+    if len(blob) > MAX_KB_SIZE:
+        return jsonify({"error": "文件超过 10MB 限制"}), 400
+    if len(blob) == 0:
+        return jsonify({"error": "文件内容为空"}), 400
+    try:
+        doc_id = wk_engine.upload_file(file.filename, blob)
+    except wk_engine.EngineError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"id": doc_id, "parse_status": "pending",
+                    "message": "已提交 WeKnora 解析，稍后自动刷新状态"})
+
+
+@app.route("/api/admin/kb/weknora/docs/<kid>", methods=["GET"])
+@require_admin
+def api_admin_kb_weknora_doc(kid):
+    """单文档：解析状态 + 分块预览。"""
+    if not wk_engine.is_enabled():
+        return jsonify({"error": "WeKnora 引擎未启用"}), 409
+    try:
+        detail = wk_engine.doc_detail(kid)
+        chunks = wk_engine.doc_chunks(kid)
+    except wk_engine.EngineError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"doc": detail, "chunks": chunks})
+
+
+@app.route("/api/admin/kb/weknora/docs/<kid>", methods=["DELETE"])
+@require_admin
+def api_admin_kb_weknora_delete(kid):
+    if not wk_engine.is_enabled():
+        return jsonify({"error": "WeKnora 引擎未启用"}), 409
+    try:
+        wk_engine.delete_doc(kid)
+    except wk_engine.EngineError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/kb/weknora/search", methods=["POST"])
+@require_admin
+def api_admin_kb_weknora_search():
+    """检索调试：直查 WeKnora knowledge-search（分数尺度与问答链路不可混比）。"""
+    if not wk_engine.is_enabled():
+        return jsonify({"error": "WeKnora 引擎未启用"}), 409
+    payload = request.get_json(force=True, silent=True) or {}
+    q = (payload.get("query") or "").strip()
+    if not q:
+        return jsonify({"error": "请输入检索词"}), 400
+    try:
+        hits = wk_engine.search(q, top_k=8)
+    except wk_engine.EngineError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"hits": hits})
 
 
 @app.route("/api/admin/kb/analytics", methods=["GET"])
@@ -651,6 +843,130 @@ def api_admin_prd_generate():
     except Exception as e:
         return jsonify({"error": "生成失败：%s" % str(e)[:160]}), 500
     return jsonify(result)
+
+
+# ── 平台智能体（A2：注册表框架 + planner 派发，实现在 agents/ 包） ───────────
+@app.route("/api/agents", methods=["GET"])
+def api_agents():
+    """公开智能体注册表：status=live 的会被首页渲染成可体验入口。"""
+    return jsonify(agents.list_agents(only_live=True))
+
+
+@app.route("/api/agents/dispatch", methods=["POST"])
+def api_agents_dispatch():
+    """planner 派发：任务文本 → triggers 关键词路由到 live 智能体。
+
+    body: {task, auto_run?, payload?}；auto_run=true 时代为执行并带回结果。
+    """
+    if rate_limited(request.remote_addr, limit=5, window=3600, bucket="agent_dispatch"):
+        return jsonify({"error": "请求太频繁，请稍后再试"}), 429
+    payload = request.get_json(force=True, silent=True) or {}
+    task = (payload.get("task") or "").strip()
+    if not task:
+        return jsonify({"error": "task 不能为空"}), 400
+    agent = agents.route_task(task)
+    if agent is None:
+        return jsonify({"ok": False, "matched": None,
+                        "message": "暂无可处理该任务的智能体"}), 404
+    out = {"ok": True, "matched": agent.id, "agent": agent.meta()}
+    if payload.get("auto_run"):
+        # 代跑结果作为子对象内嵌（代跑失败时 run 里是 {"error": ...}，外层仍 200）
+        out["run"] = _run_agent(agent, payload.get("payload") or {}).get_json()
+    return jsonify(out), 200
+
+
+def _run_agent(agent, payload):
+    """执行智能体并把异常收敛为带状态码的 Response，公开运行端点共用。
+
+    注意：必须把状态码写回 Response 本体再返回——调用方若只拿 Response，
+    元组里的 400/502/500 会被吞成 200（测试抓到过）。
+    """
+    try:
+        out, status = jsonify(agent.run(payload)), 200
+    except ValueError as e:
+        out, status = jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        out, status = jsonify({"error": "执行失败：%s" % str(e)[:160]}), 502
+    except Exception as e:
+        out, status = jsonify({"error": "执行失败：%s" % str(e)[:160]}), 500
+    out.status_code = status
+    return out
+
+
+@app.route("/api/agents/<agent_id>/run", methods=["POST"])
+def api_agent_run(agent_id):
+    """通用公开运行端点：注册表里 status=live 的智能体均可经此调用，按 agent 限流。"""
+    agent = agents.get_agent(agent_id)
+    if agent is None or agent.status != "live":
+        return jsonify({"error": "智能体不存在或未上线"}), 404
+    if rate_limited(request.remote_addr, limit=5, window=3600,
+                    bucket="agent_%s" % agent_id):
+        return jsonify({"error": "体验次数已达上限（每 IP 每小时 5 次），请稍后再试"}), 429
+    if not agent.available():
+        return jsonify({"error": "智能体暂不可用，请稍后再试"}), 503
+    payload = request.get_json(force=True, silent=True) or {}
+    return _run_agent(agent, payload)
+
+
+@app.route("/api/agents/prd/run", methods=["POST"])
+def api_agents_prd_run_legacy():
+    """A1 兼容路径：旧前端包硬编码此地址；返回 A1 的扁平结果形状。"""
+    agent = agents.get_agent("prd-advisor")
+    if agent is None or agent.status != "live":
+        return jsonify({"error": "智能体不存在或未上线"}), 404
+    if rate_limited(request.remote_addr, limit=5, window=3600, bucket="agent_prd"):
+        return jsonify({"error": "体验次数已达上限（每 IP 每小时 5 次），请稍后再试"}), 429
+    if not agent.available():
+        return jsonify({"error": "智能体暂不可用，请稍后再试"}), 503
+    payload = request.get_json(force=True, silent=True) or {}
+    res = _run_agent(agent, payload)
+    flat = res.get_json()
+    if res.status_code == 200 and isinstance(flat, dict) and "result" in flat:
+        flat = dict(flat["result"]) if isinstance(flat["result"], dict) else flat["result"]
+    return jsonify(flat), res.status_code
+
+
+# ── 预约演示（离线项目卡的转化入口） ─────────────────────────────────────────
+DEMO_BOOKINGS_FILE = os.path.join(DATA_DIR, "demo_bookings.json")
+
+
+@app.route("/api/demo/booking", methods=["POST"])
+def api_demo_booking():
+    """公开预约：称呼+联系方式必填；落盘后尝试邮件通知（发送失败不影响受理）。"""
+    if rate_limited(request.remote_addr, limit=3, window=3600, bucket="demo_booking"):
+        return jsonify({"error": "提交太频繁，请稍后再试"}), 429
+    p = request.get_json(force=True, silent=True) or {}
+    name = (p.get("name") or "").strip()[:40]
+    contact = (p.get("contact") or "").strip()[:80]
+    project = (p.get("project") or "").strip()[:60]
+    note = (p.get("note") or "").strip()[:500]
+    if not name:
+        return jsonify({"error": "请填写称呼"}), 400
+    if len(contact) < 5:
+        return jsonify({"error": "请填写有效联系方式（电话/微信/邮箱）"}), 400
+    record = {
+        "id": secrets.token_hex(8),
+        "name": name, "contact": contact, "project": project, "note": note,
+        "ip": request.remote_addr,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "notified": False,
+    }
+    ok, _detail = notify.send_email(
+        "【预约演示】%s 想看 %s" % (name, project or "某个项目"),
+        "新预约演示\n时间：%s\n称呼：%s\n联系方式：%s\n想看项目：%s\n备注：%s\nIP：%s\n"
+        % (record["ts"], name, contact, project or "-", note or "-", record["ip"]))
+    record["notified"] = ok
+    bookings = load_json(DEMO_BOOKINGS_FILE, [])
+    bookings.append(record)
+    save_json(DEMO_BOOKINGS_FILE, bookings[-200:])
+    return jsonify({"ok": True, "notified": ok, "message": "已收到你的预约，我们会尽快与你联系"})
+
+
+@app.route("/api/admin/demo/bookings", methods=["GET"])
+@require_admin
+def api_admin_demo_bookings():
+    """后台预约列表（新→旧），供管理端「预约」页签查看。"""
+    return jsonify(list(reversed(load_json(DEMO_BOOKINGS_FILE, []))))
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])

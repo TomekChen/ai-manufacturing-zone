@@ -13,6 +13,11 @@
   里做敏感度自检。若 control 分数与 knowledge 均值接近，说明裁判提示词不够严。
 - **无 API Key 直接拒绝启动**：`has_api_key()` 返 False 时 `start()` 抛 `RuntimeError`；前端按钮置灰。
 
+W4（2026-09）：被测对象切到 WeKnora——`WEKNORA_ENABLED` 开启时，knowledge 意图题的
+回答走 `engine.chat()`（每题独立会话，防跨题串上下文）、检索上下文走 `engine.search_context()`；
+问候/跑题等非知识意图仍走旧意图人设（与线上 /api/kb/ask 的路由行为一致）。
+四指标打分逻辑零改动；策略快照新增 `engine` 字段（weknora-lite / legacy）标注被测底座。
+
 Seam S5（本文件的可测边界）：`load_questions / parse_score / build_judge_messages / judge_one /
 strategy_snapshot / run_one_question / summarize_items / EvalStore / has_api_key / start / get_state`
 ——全部纯函数或可用假 chat/假 store 完全打桩，见 `tests/test_rag_eval.py`。
@@ -26,6 +31,8 @@ import threading
 from datetime import datetime
 
 from . import config
+from . import engine as wk_engine
+from .intents import classify_intent
 from .llm import chat  # noqa: F401  —— 单测会 monkeypatch 本模块的 chat 名字
 
 # 题集文件与本模块同目录；随代码走版本控制，不进 .gitignore
@@ -177,8 +184,10 @@ def judge_one(metric, question, reference, context, answer):
 # 策略快照
 # ──────────────────────────────────────────────────────────────────────────────
 def strategy_snapshot():
-    """读当前 config 关键项，写进每次评测记录，便于换策略前后横向对比。"""
+    """读当前 config 关键项，写进每次评测记录，便于换策略前后横向对比。
+    engine 字段标注被测底座（W4）：weknora-lite = WeKnora 引擎，legacy = 旧自建链路。"""
     return {
+        "engine": "weknora-lite" if wk_engine.is_enabled() else "legacy",
         "chunking": config.DEFAULT_CHUNKING,
         "retrieval": config.DEFAULT_RETRIEVAL,
         "top_k": config.TOP_K,
@@ -203,23 +212,45 @@ def _format_context(hits):
 
 
 def run_one_question(store, item):
-    """跑一题：调 store.ask 拿答案+意图，调 store.search 拿检索上下文，再跑四段裁判。
+    """跑一题：拿答案 + 拿检索上下文，再跑四段裁判。
 
+    W4：WEKNORA_ENABLED 开启且判为 knowledge 意图时，回答走 WeKnora 会话问答
+    （每题新会话，防跨题串上下文）、上下文走 WeKnora 直查；非知识意图（问候/跑题）
+    仍走旧 store.ask 意图人设，与线上 /api/kb/ask 路由口径一致。
     注意：本函数**只走单轮**——多轮改写和意图路由的完整覆盖交给 Slice 5 的测试；
     这里专注「给定当前策略下，本题能否答对」，避免评测本身引入随机性。
     """
     q = item["question"]
-    ask_res = store.ask(q) or {}
-    answer = ask_res.get("answer", "") or ""
-    intent = ask_res.get("intent") or "knowledge"
-    retrieval = ask_res.get("retrieval")
-    sources = ask_res.get("sources", []) or []
-    try:
-        hits = store.search(q) or []
-    except Exception:
-        hits = []
+    t0 = time.perf_counter()
+    if wk_engine.is_enabled() and classify_intent(q, has_history=False) == "knowledge":
+        try:
+            answer, refs, _sid = wk_engine.chat(q)
+            refused = not refs  # 拒答口径与线上一致：0 引用才算拒
+        except Exception:
+            answer, refs, refused = "", [], True
+        try:
+            hits = wk_engine.search_context(q, top_k=config.TOP_K)
+        except Exception:
+            hits = []
+        try:  # 遥测与线上口径一致（吞异常：评测不能被遥测拖垮）
+            store.log_weknora_ask(secrets.token_hex(8), q, len(refs), refused, answer, t0)
+        except Exception:
+            pass
+        intent, retrieval = "knowledge", "weknora"
+        sources = [{"title": r.get("title", "")} for r in refs]
+    else:
+        ask_res = store.ask(q) or {}
+        answer = ask_res.get("answer", "") or ""
+        intent = ask_res.get("intent") or "knowledge"
+        retrieval = ask_res.get("retrieval")
+        sources = ask_res.get("sources", []) or []
+        try:
+            hits = store.search(q) or []
+        except Exception:
+            hits = []
     context = _format_context(hits)
     scores = {m: judge_one(m, q, item["reference"], context, answer) for m in config.EVAL_METRICS}
+    _top = hits[0].get("score") if hits else None
     return {
         "id": item["id"],
         "category": item.get("category", ""),
@@ -230,7 +261,7 @@ def run_one_question(store, item):
         "intent": intent,
         "retrieval": retrieval,
         "hits_count": len(hits),
-        "top_score": round(hits[0]["score"], 4) if hits else None,
+        "top_score": round(_top, 4) if isinstance(_top, (int, float)) else None,
         "context_len": len(context),
         "sources_count": len(sources),
         "scores": scores,

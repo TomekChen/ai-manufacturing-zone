@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# DEPRECATED(W4 2026-09): 能力已由 WeKnora 引擎（rag/engine.py）接管；本版仅作 WEKNORA_ENABLED=false 回退保留，下一版删除。
 """Reciprocal Rank Fusion（RRF）。
 
 给定多路已按相关性降序排好的 id 列表，用公式 score(d)=Σ 1/(k+rank_i(d)) 融合排名。

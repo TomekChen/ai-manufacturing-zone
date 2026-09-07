@@ -11,6 +11,26 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       # 阿里云百炼（DashScope 兼容模式）API Key，用于知识库嵌入与问答
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      # WeKnora 引擎（W2）：false 时管理界面/采集自动回退旧 rag 链路
+      WEKNORA_ENABLED: ${WEKNORA_ENABLED:-true}
+      WEKNORA_BASE_URL: ${WEKNORA_BASE_URL:-http://weknora-app:8080}
+      WEKNORA_API_KEY: ${WEKNORA_API_KEY:-}
+      WEKNORA_KB_ID: ${WEKNORA_KB_ID:-982d043f-681e-4ff9-ab8d-c58eac3ba8cc}
+      # 邮件通知（预约演示）：SMTP_PASS 是邮箱授权码（QQ邮箱设置-账户里生成，非登录密码）
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      NOTIFY_TO: ${NOTIFY_TO:-}
     volumes:
       - ./data:/app/data
+    networks:
+      - default
+      - weknora
     restart: unless-stopped
+
+# 加入 WeKnora LITE 的 compose 网络（外部已存在），portal 容器经容器名直连 8805 内网端口
+networks:
+  weknora:
+    external: true
+    name: weknora-lite_wknet
