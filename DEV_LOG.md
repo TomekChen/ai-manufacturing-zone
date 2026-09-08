@@ -1066,3 +1066,33 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - dispatch 的 planner 目前是关键词匹配，多智能体并存后的优先级/协同留待 A3。
 
 **改动文件**：`agents/`（新，5 文件）、`notify.py`（新）、`app.py`（agent/booking 端点 + _run_agent 修复）、`Dockerfile`、`docker-compose.yml`、`src/AgentPRD.jsx`、`src/DemoBooking.jsx`（新）、`src/AdminBookings.jsx`（新）、`src/main.jsx`、`src/style.css`、`tests/test_agents.py`（新）、`tests/test_booking.py`（新）；服务器 backups/a2/（app.py、Dockerfile、docker-compose.yml、dist）。
+
+## §三十一 · Slice A3 · 第二个智能体「知识管家」上线（注册表框架横向验证）
+
+**日期**：2026-09-08　**切片**：A3 + 预约弹窗「您」字修订　**状态**：已部署真机验证 ✅
+
+**功能清单**：
+1. `agents/kb_assistant.py`（新）：把公开知识问答收编为第二个 live 智能体——`id=kb-assistant`，名称「知识管家」，触发词（知识库/问答/咨询/查询/是什么/介绍一下…），复用与 `/api/kb/ask` 完全相同的问答链路（意图识别 → WeKnora → KB 兜底）。
+2. 问答内核下沉共享：`kb_ask_core(question, history, retrieval, conversation_id)` 在 app.py 落地，经 `agents.runtime.kb_ask` 注入点交给智能体（agents 包不 import app，依赖倒置）；`_ask_weknora` 同步重构为返回 dict + 抛 RuntimeError，不再吐 jsonify 元组。
+3. 统一契约补 `ui` 字段：`AgentBase.ui = "prd" | "qa"` 进 meta()，前端 main.jsx 按它分流体验弹窗（qa → AgentKB 问答弹窗，其余 → AgentPRD 表单弹窗）——第三个智能体接入前端零改动。
+4. 新组件 `src/AgentKB.jsx`：问答体验弹窗（3 个示例问题 chip、Ctrl+Enter 提交、引用来源列表 + 置信度徽章、markdown 渲染回答），样式复用 prd 现成类 + 少量新增 agent-kb-*。
+5. 预约演示弹窗与邮件话术全面「你→您」（8 处文案）。
+
+**设计要点**：
+- A3 选「知识管家」而非新能力，是为**最小成本验证 A2 框架的可扩展性**：第二个智能体上线，前端未加任何新路由逻辑（只多一个 ui 分流），限流桶天然按 `agent_kb-assistant` 隔离。
+- kb_ask_core 校验（空问题/超 500 字 ValueError）在内核层，智能体与老端点共享同一套语义：ValueError→400、RuntimeError→502。
+- confidence 策略：有引用 0.7 / 无引用 0.2（问答场景不做 0.6/0.3 的接地二分）。
+
+**测试结果**：test_agents **72/72**（新增 21 项 kb 断言：注册表/live/ui/triggers/route_task 优先级/通用 run 契约/400/503/限流桶/dispatch 路由）、test_booking 28/28 回归通过；build 46 模块。真机：注册表 2 live 且 ui 字段正确，dispatch 双路由各归其位，kb 空问题 400，**真实问题走 WeKnora：engine=weknora refs=16 confidence=0.7 ans_len=540**，prd-advisor 空入参仍 400，新 bundle（index-D13vpLD7.js）上线，您字修订 3 处在 bundle + 1 处在容器 app.py 均已验证。
+
+**坑与教训**：
+1. A3 验证脚本自己犯了两处 A2 记过：`怎么称呼您` 是前端文案却拿去 grep 容器 app.py（应查 bundle）；`/api/options` 幻影路径又打了一次（§三十坑 5 明文写着别抄）——对照复检后确认均为脚本误报，部署本身无恙。
+2. 部署脚本 `show()` 解包 run() 的 3 元组漏接 1 个 → 重建输出丢失；远端命令实际已执行完，补一个独立状态检查脚本确认，未重复重建。
+3. 测试顺序依赖：kb 的 dispatch 断言会给 `agent_dispatch` 桶 +1，必须排在 test_endpoints 的「桶内恰好 4 条」断言**之后**执行。
+4. paramiko exec_command 的超时参数只是读超时，长命令（compose build）仍要给足 timeout 并用 tail 收敛输出。
+
+**已知限制 / 后续建议**：
+- 知识管家与首页知识问答共享同一问答内核与限流桶体系（agent 桶独立、default 桶不动），无新增外部依赖。
+- 触发词「介绍一下」「是什么」偏泛，多智能体继续增多后 planner 需要升级为打分制。
+
+**改动文件**：`agents/kb_assistant.py`（新）、`agents/runtime.py`、`agents/base.py`、`agents/registry.py`、`agents/prd_advisor.py`、`app.py`（kb_ask_core + 注入 + _ask_weknora 重构 + 邮件话术）、`src/AgentKB.jsx`（新）、`src/main.jsx`、`src/style.css`、`src/DemoBooking.jsx`、`tests/test_agents.py`；服务器 backups/a3/（app.py、agents、dist）。

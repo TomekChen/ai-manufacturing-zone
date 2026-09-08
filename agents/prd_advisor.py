@@ -27,6 +27,7 @@ class PrdAdvisorAgent(AgentBase):
     status = "live"
     endpoint = "/api/agents/prd-advisor/run"
     triggers = ["prd", "方案", "需求文档", "售前", "标书", "可行性"]
+    ui = "prd"
 
     def available(self):
         return kb_prd.has_api_key()

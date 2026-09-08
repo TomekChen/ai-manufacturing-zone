@@ -20,6 +20,7 @@ class AgentBase:
     status = "coming_soon"   # live=可体验（首页渲染"立即体验"入口）；coming_soon=仅注册未上线
     endpoint = ""            # 公开运行端点，前端卡片据此发起调用
     triggers = []            # planner 关键词（不区分大小写），dispatch 按它路由
+    ui = ""                  # 前端体验弹窗类型：prd=方案生成表单 / qa=问答对话框
 
     def meta(self):
         """注册表对外元数据（公开 API / 首页卡片用的就是它）。"""
@@ -28,6 +29,7 @@ class AgentBase:
             "emoji": self.emoji, "color": self.color, "desc": self.desc,
             "caps": list(self.caps), "status": self.status,
             "endpoint": self.endpoint, "triggers": list(self.triggers),
+            "ui": self.ui,
         }
 
     def available(self):

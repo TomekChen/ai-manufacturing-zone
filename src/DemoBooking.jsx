@@ -57,8 +57,8 @@ export default function DemoBooking({ projects = [], preselect = '', onClose }) 
             <div className="booking-done-title">预约已提交</div>
             <div className="booking-done-sub">
               {done.notified
-                ? '我们已同步收到邮件通知，会尽快与你联系。'
-                : '我们已记录你的预约，会尽快与你联系。'}
+                ? '我们已同步收到邮件通知，会尽快与您联系。'
+                : '我们已记录您的预约，会尽快与您联系。'}
             </div>
             <button className="btn btn-primary" onClick={onClose}>好的</button>
           </div>
@@ -66,17 +66,17 @@ export default function DemoBooking({ projects = [], preselect = '', onClose }) 
           <form className="admin-form booking-form" onSubmit={submit}>
             <div className="booking-intro">
               该项目当前处于<b>待演示</b>状态（为节省服务器资源未保持常驻）。
-              留下联系方式，我们启动环境后会第一时间与你约定在线演示时间。
+              留下联系方式，我们启动环境后会第一时间与您约定在线演示时间。
             </div>
-            <label>怎么称呼你 <span className="prd-req">*</span></label>
+            <label>怎么称呼您 <span className="prd-req">*</span></label>
             <input value={name} maxLength={40} required
                    placeholder="如：王经理"
                    onChange={e => setName(e.target.value)} />
             <label>联系方式 <span className="prd-req">*</span></label>
             <input value={contact} maxLength={80} required
-                   placeholder="手机号 / 微信号 / 邮箱，方便联系到你"
+                   placeholder="手机号 / 微信号 / 邮箱，方便联系到您"
                    onChange={e => setContact(e.target.value)} />
-            <div className="booking-hint">至少 5 个字符，请确保能联系到你</div>
+            <div className="booking-hint">至少 5 个字符，请确保能联系到您</div>
             <label>想看的项目 <span className="prd-opt">（选填）</span></label>
             <select value={project} onChange={e => setProject(e.target.value)}>
               <option value="">暂不确定，想整体了解一下</option>

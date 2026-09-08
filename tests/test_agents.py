@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""A2 编排层单测：注册表 + planner 派发 + 通用/兼容 run 端点（离线、确定性、不触发真 LLM）。
+"""A2 编排层 + A3 知识管家单测：注册表 + planner 派发 + 通用/兼容 run 端点（离线、确定性、不触发真 LLM）。
 
 运行：py tests/test_agents.py
 
 打桩说明：本机若配了 DASHSCOPE_API_KEY，合法入参会真实调用 LLM（烧钱且慢），
 必须把 rag.prd 的 has_api_key/generate_prd 换成假实现——app 与 agents.prd_advisor
 引用的是同一个 rag.prd 模块对象，桩一处两边生效。
+A3 同理：kb-assistant 通过 agents.runtime.kb_ask 注入点取问答引擎，测试里直接换桩。
 """
 import os
 import sys
@@ -122,6 +123,75 @@ def test_registry_unit():
 VALID = {"company": "测试公司", "business": "这是一段足够长的业务介绍"}
 
 
+# ---------- A3 知识管家（注册表 + 通用 run） ----------
+def test_kb_assistant():
+    print("\n[kb-assistant / A3]")
+    kb = get_agent("kb-assistant")
+    prd = get_agent("prd-advisor")
+    check("kb-assistant 已注册且 live", kb is not None and kb.status == "live")
+    meta = kb.meta()
+    check("kb-assistant meta.ui=qa", meta.get("ui") == "qa")
+    check("prd-advisor meta.ui=prd", prd.meta().get("ui") == "prd")
+    check("kb-assistant endpoint 指向通用 run", meta["endpoint"] == "/api/agents/kb-assistant/run")
+    check("公开注册表 = 两个 live：prd-advisor 在前 kb-assistant 在后",
+          [x["id"] for x in agents.list_agents(only_live=True)] == ["prd-advisor", "kb-assistant"])
+    check("route_task：知识库问答 → kb-assistant", route_task("知识库里有哪些资料") is kb)
+    check("route_task：触发词'是什么'命中 kb-assistant", route_task("MES 是什么") is kb)
+    check("route_task 优先级：prd 任务仍归先注册的 prd-advisor",
+          route_task("帮我写一份 PRD 方案") is prd)
+
+    # HTTP：给 agents.runtime.kb_ask 换桩（app 注入的真内核不参与离线测试）
+    import agents.runtime as rt
+
+    def fake_kb_ask(question, history=None, retrieval=None):
+        q = (question or "").strip()
+        if not q:
+            raise ValueError("请输入问题")
+        return {"answer": "知识库假回答", "sources": [{"title": "知识来源A", "snippet": ""}],
+                "retrieval": "weknora", "intent": "knowledge", "ask_id": "fake-1", "engine": "weknora"}
+
+    old = rt.kb_ask
+    rt.kb_ask = fake_kb_ask
+    try:
+        c = app.app.test_client()
+        r = c.post("/api/agents/kb-assistant/run", json={"question": "知识库里有哪些资料"})
+        body = r.get_json()
+        check("kb 通用 run 200", r.status_code == 200, str(body)[:120])
+        check("kb 统一契约：ok/agent_id", body.get("ok") is True and body.get("agent_id") == "kb-assistant")
+        check("kb result.answer 透传", body.get("result", {}).get("answer") == "知识库假回答")
+        check("kb refs = sources", body.get("refs") == [{"title": "知识来源A", "snippet": ""}])
+        check("kb 有引用 → confidence 0.7", body.get("confidence") == 0.7)
+        check("kb intent/engine 透传", body.get("intent") == "knowledge" and body.get("engine") == "weknora")
+
+        r = c.post("/api/agents/kb-assistant/run", json={"question": "   "})
+        check("kb 空问题 400（ValueError 收敛）", r.status_code == 400)
+        r = c.post("/api/agents/kb-assistant/run", json={})
+        check("kb 缺字段 400", r.status_code == 400)
+
+        def fake_no_ref(question, history=None, retrieval=None):
+            return {"answer": "知识库没查到，我不知道", "sources": [],
+                    "retrieval": "keyword", "intent": "knowledge"}
+
+        rt.kb_ask = fake_no_ref
+        r = c.post("/api/agents/kb-assistant/run", json={"question": "随便问问"})
+        check("kb 无引用 → confidence 0.2", r.status_code == 200 and r.get_json().get("confidence") == 0.2)
+
+        rt.kb_ask = None
+        r = c.post("/api/agents/kb-assistant/run", json={"question": "x"})
+        check("kb 未注入引擎 → 503", r.status_code == 503)
+
+        check("kb 限流桶独立存在", "127.0.0.1" in app._ask_limits.get("agent_kb-assistant", {}))
+
+        # dispatch 关键词路由到 kb-assistant（planner 层面再验一次）
+        r = c.post("/api/agents/dispatch", json={"task": "知识库里有哪些资料"})
+        body = r.get_json()
+        check("dispatch：知识库任务 matched=kb-assistant",
+              r.status_code == 200 and body.get("matched") == "kb-assistant", str(body)[:120])
+    finally:
+        rt.kb_ask = old
+    check("测试后 runtime.kb_ask 桩已还原", rt.kb_ask is old)
+
+
 def test_endpoints():
     print("\n[endpoints]")
     c = app.app.test_client()
@@ -199,5 +269,6 @@ def test_endpoints():
 if __name__ == "__main__":
     test_registry_unit()
     test_endpoints()
+    test_kb_assistant()  # 必须在 test_endpoints 之后：dispatch 限流桶计数断言依赖调用顺序
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

@@ -10,6 +10,7 @@ import AdminAnalytics from './AdminAnalytics';
 import AdminEval from './AdminEval';
 import AdminPRD from './AdminPRD';
 import AgentPRD from './AgentPRD';
+import AgentKB from './AgentKB';
 import DemoBooking from './DemoBooking';
 import AdminBookings from './AdminBookings';
 
@@ -774,7 +775,10 @@ function App() {
           onSave={saveProject}
         />
       )}
-      {activeAgent && <AgentPRD agent={activeAgent} onClose={() => setActiveAgent(null)} />}
+      {/* A3 起：按注册表 ui 字段分流体验弹窗（qa=问答 / 其余=方案生成表单） */}
+      {activeAgent && (activeAgent.ui === 'qa'
+        ? <AgentKB agent={activeAgent} onClose={() => setActiveAgent(null)} />
+        : <AgentPRD agent={activeAgent} onClose={() => setActiveAgent(null)} />)}
       {bookingFor !== null && (
         <DemoBooking
           projects={projects || []}

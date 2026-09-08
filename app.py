@@ -435,7 +435,7 @@ def _wk_session_save(conversation_id, session_id):
 
 def _ask_weknora(question, history, conversation_id):
     """W3：知识问答转发 WeKnora（意图已判定为 knowledge）。
-    返回与旧链路同构的 JSON：{answer, sources, retrieval, intent, ask_id}。"""
+    A3 起返回与旧链路同构的 dict；引擎故障抛 RuntimeError（端点映射 502）。"""
     t0 = time.perf_counter()
     ask_id = secrets.token_hex(8)
     session_id = _wk_session_get(conversation_id)
@@ -444,11 +444,11 @@ def _ask_weknora(question, history, conversation_id):
     except wk_engine.EngineError as e:
         # 映射的会话可能已失效（WeKnora 重启/过期）：丢弃映射重试一次
         if not session_id:
-            return jsonify({"error": "WeKnora 问答失败：%s" % str(e)[:120]}), 502
+            raise RuntimeError("WeKnora 问答失败：%s" % str(e)[:120])
         try:
             answer, refs, session_id = wk_engine.chat(question, session_id=None)
         except wk_engine.EngineError as e2:
-            return jsonify({"error": "WeKnora 问答失败：%s" % str(e2)[:120]}), 502
+            raise RuntimeError("WeKnora 问答失败：%s" % str(e2)[:120])
     _wk_session_save(conversation_id, session_id)
     answer = _WK_CITE_RE.sub("", answer or "").strip()
     sources = [{"title": r.get("title") or "(未命名)", "snippet": r.get("snippet") or ""}
@@ -457,28 +457,24 @@ def _ask_weknora(question, history, conversation_id):
     # 无引用 = 答案无据可依（WeKnora 的拒绝式回答），遥测按 refused 记
     KB.log_weknora_ask(ask_id, question, hits, refused=hits == 0, answer=answer,
                        t0=t0, turns=len(history or []))
-    return jsonify({
+    return {
         "answer": answer, "sources": sources, "retrieval": "weknora",
         "intent": "knowledge", "ask_id": ask_id, "engine": "weknora",
-    })
+    }
 
 
-@app.route("/api/kb/ask", methods=["POST"])
-def api_kb_ask():
-    """知识库问答：意图路由（知识/闲聊/超范围）+ 多轮上下文 + 可插拔检索 + LLM 生成。
-    W3：引擎开启时 knowledge 意图转发 WeKnora chat；问候/闲聊/知识外仍走原意图链路；
-    WEKNORA_ENABLED=false 一键回到全旧链路（回滚网）。"""
-    if rate_limited(request.remote_addr, limit=10, window=60):
-        return jsonify({"error": "提问太频繁，请稍后再试"}), 429
-    payload = request.get_json(force=True, silent=True) or {}
-    question = (payload.get("question") or "").strip()
+def kb_ask_core(question, history=None, retrieval=None, conversation_id=""):
+    """问答共享内核（A3）：/api/kb/ask 视图与 kb-assistant 智能体共用同一条链路。
+
+    入参问题抛 ValueError；引擎故障抛 RuntimeError；其余异常向上传播。
+    返回结果 dict（answer/sources/retrieval/intent/ask_id/engine）。
+    """
+    question = (question or "").strip()
     if not question:
-        return jsonify({"error": "请输入问题"}), 400
+        raise ValueError("请输入问题")
     if len(question) > 500:
-        return jsonify({"error": "问题太长（最多 500 字）"}), 400
-    retrieval = _clean_choice(payload.get("retrieval"), kb.RETRIEVAL_OPTIONS)
-    history = payload.get("history") if isinstance(payload.get("history"), list) else None
-    conversation_id = (payload.get("conversation_id") or "").strip()[:64]
+        raise ValueError("问题太长（最多 500 字）")
+    history = history if isinstance(history, list) else None
     if wk_engine.is_enabled():
         try:
             intent = classify_intent(question, has_history=bool(history))
@@ -486,8 +482,29 @@ def api_kb_ask():
             intent = "knowledge"  # 路由器自身异常时按知识问答兜底
         if intent == "knowledge":
             return _ask_weknora(question, history or [], conversation_id)
+    return KB.ask(question, history=history,
+                  retrieval=_clean_choice(retrieval, kb.RETRIEVAL_OPTIONS))
+
+
+# 智能体运行时注入（A3）：知识管家与公开问答视图共用此内核
+agents.runtime.kb_ask = kb_ask_core
+
+
+@app.route("/api/kb/ask", methods=["POST"])
+def api_kb_ask():
+    """知识库问答：意图路由（知识/闲聊/超范围）+ 多轮上下文 + 可插拔检索 + LLM 生成。
+    W3：引擎开启时 knowledge 意图转发 WeKnora chat；问候/闲聊/知识外仍走原意图链路；
+    WEKNORA_ENABLED=false 一键回到全旧链路（回滚网）。
+    A3：核心逻辑抽到 kb_ask_core，智能体与视图共用。"""
+    if rate_limited(request.remote_addr, limit=10, window=60):
+        return jsonify({"error": "提问太频繁，请稍后再试"}), 429
+    payload = request.get_json(force=True, silent=True) or {}
     try:
-        result = KB.ask(question, history=history, retrieval=retrieval)
+        result = kb_ask_core(payload.get("question"), history=payload.get("history"),
+                             retrieval=payload.get("retrieval"),
+                             conversation_id=(payload.get("conversation_id") or "").strip()[:64])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 502
     except Exception as e:
@@ -959,7 +976,7 @@ def api_demo_booking():
     bookings = load_json(DEMO_BOOKINGS_FILE, [])
     bookings.append(record)
     save_json(DEMO_BOOKINGS_FILE, bookings[-200:])
-    return jsonify({"ok": True, "notified": ok, "message": "已收到你的预约，我们会尽快与你联系"})
+    return jsonify({"ok": True, "notified": ok, "message": "已收到您的预约，我们会尽快与您联系"})
 
 
 @app.route("/api/admin/demo/bookings", methods=["GET"])

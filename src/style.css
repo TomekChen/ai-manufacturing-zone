@@ -1387,3 +1387,15 @@ a.qa-source-name:hover { color: var(--accent); }
 .booking-done-icon { font-size: 44px; line-height: 1; margin-bottom: 14px; }
 .booking-done-title { font-size: 18px; font-weight: 700; color: var(--ink-strong); margin-bottom: 8px; }
 .booking-done-sub { font-size: 14px; line-height: 1.7; color: var(--muted); margin-bottom: 22px; }
+
+/* ===== 知识管家 · 公开问答体验弹窗（A3，复用 prd/qa 现成样式） ===== */
+.agent-kb-suggestions { display: flex; gap: 8px; flex-wrap: wrap; }
+.agent-kb-tip { font-size: 12px; color: var(--faint); }
+.agent-kb-sources { margin-bottom: 12px; }
+.agent-kb-answer {
+  background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 18px 20px; max-height: 46vh; overflow-y: auto;
+}
+@media (max-width: 720px) {
+  .agent-kb-answer { max-height: 52vh; padding: 14px; }
+}

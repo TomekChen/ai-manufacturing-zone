@@ -53,3 +53,4 @@ def route_task(task):
 
 # 智能体实现（import 即注册；新智能体在此追加一行）
 from . import prd_advisor  # noqa: E402,F401
+from . import kb_assistant  # noqa: E402,F401
