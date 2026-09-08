@@ -24,6 +24,14 @@ const TYPE_LABEL = { upload: '用户上传', url: 'URL 采集', link: '友情链
 const CHUNK_LABEL = { fixed: '固定窗口', semantic: '语义分块' };
 const RETR_LABEL = { vector: '纯向量', bm25: 'BM25', hybrid: '混合' };
 const label = (map, key) => map[key] || key;
+// WeKnora 解析状态（W2）：异步解析，轮询刷新
+const WK_PARSE = {
+  pending: ['排队中', 'status-pill pending'],
+  processing: ['解析中', 'status-pill pending'],
+  completed: ['已完成', 'status-pill online'],
+  failed: ['解析失败', 'status-pill offline'],
+};
+const fmtSize = (n) => (!n ? '—' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B');
 
 /* ===== 后台「知识库管理」标签页：审核 + 采集(选分块) + 重建 + 问答调试 + 文档列表 ===== */
 export default function AdminKB({ token, onNotify }) {
@@ -47,6 +55,16 @@ export default function AdminKB({ token, onNotify }) {
   const [dbgRetr, setDbgRetr] = useState('hybrid');
   const [dbgBusy, setDbgBusy] = useState(false);
   const [dbgResult, setDbgResult] = useState(null); // {answer, sources, retrieval, error}
+  // ── WeKnora 模式（options.engine.enabled 时启用；关闭自动回退旧界面） ──
+  const wkOn = !!(options.engine && options.engine.enabled);
+  const [wkDocs, setWkDocs] = useState([]);
+  const [wkTotal, setWkTotal] = useState(0);
+  const [wkFile, setWkFile] = useState(null);
+  const [wkUploading, setWkUploading] = useState(false);
+  const [wkQ, setWkQ] = useState('');
+  const [wkBusy, setWkBusy] = useState(false);
+  const [wkHits, setWkHits] = useState(null); // [{filename, score, content}]
+  const [wkPreview, setWkPreview] = useState(null); // DocPreview 形状的文档
 
   const auth = { Authorization: `Bearer ${token}` };
 
@@ -56,6 +74,7 @@ export default function AdminKB({ token, onNotify }) {
       if (!res.ok) return; // 老后端无此接口时静默用兜底值
       const data = await res.json();
       setOptions((o) => ({
+        engine: data.engine || o.engine, // WeKnora 引擎开关（W2）
         chunking: data.chunking?.length ? data.chunking : o.chunking,
         default_chunking: data.default_chunking || o.default_chunking,
         retrieval: data.retrieval?.length ? data.retrieval : o.retrieval,
@@ -168,9 +187,15 @@ export default function AdminKB({ token, onNotify }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '采集失败');
       setCrawlUrl('');
-      await fetchDocs();
-      setNotice({ ok: true, text: `采集成功：「${data.doc?.title || u}」已入库（${data.doc?.chars || 0} 字，${data.doc?.chunk_ids?.length || 0} 块，${label(CHUNK_LABEL, data.doc?.chunking)}）` });
-      if (data.doc?.id) fetchDetail(data.doc.id);
+      if (wkOn) {
+        // WeKnora 采集是异步解析：只报提交结果，状态由列表轮询刷新
+        await fetchWkDocs();
+        setNotice({ ok: true, text: data.message || '已提交 WeKnora 解析，状态稍后自动刷新' });
+      } else {
+        await fetchDocs();
+        setNotice({ ok: true, text: `采集成功：「${data.doc?.title || u}」已入库（${data.doc?.chars || 0} 字，${data.doc?.chunk_ids?.length || 0} 块，${label(CHUNK_LABEL, data.doc?.chunking)}）` });
+        if (data.doc?.id) fetchDetail(data.doc.id);
+      }
     } catch (err) {
       setNotice({ ok: false, text: err?.message || '采集失败' });
     } finally {
@@ -200,6 +225,113 @@ export default function AdminKB({ token, onNotify }) {
     }
   };
 
+  /* ── WeKnora 模式（W2）：列表 / 上传 / 删除 / 分块预览 / 直查检索 ── */
+  const fetchWkDocs = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/weknora/docs`, { headers: auth });
+      if (!res.ok) throw new Error(await readError(res));
+      const data = await res.json();
+      setWkDocs(data.docs || []);
+      setWkTotal(data.total || (data.docs || []).length);
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || 'WeKnora 文档加载失败' });
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (wkOn) fetchWkDocs();
+  }, [wkOn, fetchWkDocs]);
+
+  // 解析中/排队中时每 5s 自动刷新，直到全部到达终态
+  useEffect(() => {
+    if (!wkOn) return;
+    const busy = wkDocs.some((d) => d.parse_status === 'pending' || d.parse_status === 'processing');
+    if (!busy) return;
+    const t = setTimeout(fetchWkDocs, 5000);
+    return () => clearTimeout(t);
+  }, [wkOn, wkDocs, fetchWkDocs]);
+
+  const wkUpload = async (e) => {
+    e.preventDefault();
+    if (!wkFile || wkUploading) return;
+    setWkUploading(true);
+    setNotice(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', wkFile);
+      const res = await fetch(`${API_BASE}/admin/kb/weknora/upload`, { method: 'POST', headers: auth, body: fd });
+      if (!res.ok) throw new Error(await readError(res));
+      const data = await res.json();
+      setWkFile(null);
+      setNotice({ ok: true, text: data.message || '已提交 WeKnora 解析' });
+      fetchWkDocs();
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '上传失败' });
+    } finally {
+      setWkUploading(false);
+    }
+  };
+
+  const wkDelete = async (d) => {
+    if (!confirm(`确定从 WeKnora 删除「${d.title}」吗？其分块将一并移除。`)) return;
+    setBusyId(d.id + 'wkdel');
+    setNotice(null);
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/weknora/docs/${d.id}`, { method: 'DELETE', headers: auth });
+      if (!res.ok) throw new Error(await readError(res));
+      fetchWkDocs();
+      setNotice({ ok: true, text: '已删除' });
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '删除失败' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const wkOpenPreview = async (d) => {
+    setWkPreview(null);
+    setBusyId(d.id + 'wkprev');
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/weknora/docs/${d.id}`, { headers: auth });
+      if (!res.ok) throw new Error(await readError(res));
+      const data = await res.json();
+      const chunks = (data.chunks || []).map((c, i) => ({ text: c.content || c.text || '', index: c.chunk_index ?? c.seq ?? i }));
+      setWkPreview({
+        title: d.title,
+        status: d.parse_status === 'pending' ? 'processing' : d.parse_status,
+        chunk_count: chunks.length,
+        created_at: d.created_at,
+        chunks,
+      });
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '加载分块失败' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const wkSearch = async (e) => {
+    e.preventDefault();
+    const q = wkQ.trim();
+    if (!q || wkBusy) return;
+    setWkBusy(true);
+    setWkHits(null);
+    try {
+      const res = await fetch(`${API_BASE}/admin/kb/weknora/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ query: q }),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      const data = await res.json();
+      setWkHits(data.hits || []);
+    } catch (err) {
+      setNotice({ ok: false, text: err?.message || '检索失败' });
+    } finally {
+      setWkBusy(false);
+    }
+  };
+
   const shown = filter === 'all' ? docs : docs.filter((d) => d.status === filter);
   const counts = {
     pending: docs.filter((d) => d.status === 'pending').length,
@@ -210,7 +342,56 @@ export default function AdminKB({ token, onNotify }) {
 
   return (
     <div className="kb-admin">
-      {/* 问答调试：选检索方式对比效果（Slice 2） */}
+      {wkOn && (
+        <div className="wk-banner">
+          <div>
+            <strong>知识库引擎：WeKnora LITE</strong>
+            <div className="muted">上传 / URL 采集的文档由 WeKnora 异步解析分块（约 512 字/块），完成即可被问答引用；管理操作即时生效，无审核流。</div>
+          </div>
+          <a className="btn btn-ghost btn-sm" href={`http://${location.hostname}:8805`} target="_blank" rel="noreferrer">打开 WeKnora 控制台</a>
+        </div>
+      )}
+
+      {wkOn && (
+        <form className="kb-crawl-row" onSubmit={wkUpload}>
+          <input type="file" accept=".txt,.md,.pdf" onChange={(e) => setWkFile(e.target.files[0] || null)} />
+          <button type="submit" className="btn btn-primary" disabled={!wkFile || wkUploading}>
+            {wkUploading ? '上传中…' : '上传入库'}
+          </button>
+        </form>
+      )}
+
+      {wkOn ? (
+        <div className="kb-debug">
+          <div className="kb-debug-title">检索调试（直查 WeKnora）</div>
+          <form className="kb-debug-row" onSubmit={wkSearch}>
+            <input
+              type="text"
+              value={wkQ}
+              onChange={(e) => setWkQ(e.target.value)}
+              placeholder="输入检索词直查 WeKnora 召回；分数与问答链路不同尺度，仅作对比参考"
+              maxLength={200}
+              disabled={wkBusy}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={wkBusy || !wkQ.trim()}>
+              {wkBusy ? '检索中…' : '检索'}
+            </button>
+          </form>
+          {wkHits && (
+            <div className="kb-debug-answer">
+              <div className="kb-debug-meta">命中 {wkHits.length} 条</div>
+              {wkHits.length === 0 && <div className="muted">无命中</div>}
+              {wkHits.map((h, i) => (
+                <div className="wk-hit" key={i}>
+                  <span className="kb-tag">{h.score ?? '—'}</span>
+                  <strong className="wk-hit-name">{h.filename || '(未知来源)'}</strong>
+                  <div className="wk-hit-content">{(h.content || '').slice(0, 180)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="kb-debug">
         <div className="kb-debug-title">问答调试（对比检索策略）</div>
         <form className="kb-debug-row" onSubmit={debugAsk}>
@@ -260,6 +441,7 @@ export default function AdminKB({ token, onNotify }) {
           </div>
         )}
       </div>
+      )}
 
       {/* URL 采集（可选分块方式，Slice 3） */}
       <form className="kb-crawl-row" onSubmit={crawl}>
@@ -270,20 +452,35 @@ export default function AdminKB({ token, onNotify }) {
           placeholder="粘贴【具体文章页】地址（不要网站首页），抓取正文入库。例：某篇政策解读/技术文章的详情页 URL"
           required
         />
-        <select value={crawlChunking} onChange={(e) => setCrawlChunking(e.target.value)} title="分块方式">
-          {options.chunking.map((c) => (<option key={c} value={c}>{label(CHUNK_LABEL, c)}</option>))}
-        </select>
+        {!wkOn && (
+          <select value={crawlChunking} onChange={(e) => setCrawlChunking(e.target.value)} title="分块方式">
+            {options.chunking.map((c) => (<option key={c} value={c}>{label(CHUNK_LABEL, c)}</option>))}
+          </select>
+        )}
         <button type="submit" className="btn btn-primary" disabled={crawling || !crawlUrl.trim()}>
           {crawling ? '采集中…' : '采集入库'}
         </button>
       </form>
       <div className="kb-crawl-hint">
         提示：请粘贴<strong>单篇文章的详情页地址</strong>。网站首页抓出来的只是栏目名和导航，没有正文价值。
-        「分块方式」决定这篇文章怎么切：<strong>固定窗口</strong>稳妥通用，<strong>语义分块</strong>按段落聚合、更连贯。
-        入库后可在下方对单篇「换分块策略重建」。
+        {wkOn
+          ? ' 采集后由 WeKnora 异步解析入库，状态在下方列表自动刷新。'
+          : ' 「分块方式」决定这篇文章怎么切：固定窗口稳妥通用，语义分块按段落聚合、更连贯。入库后可在下方对单篇「换分块策略重建」。'}
       </div>
 
       {/* 统计 + 筛选 + 全库重建 */}
+      {wkOn ? (
+        <div className="kb-toolbar">
+          <div className="kb-stats">
+            <span className="kb-stat">共 {wkTotal} 篇文档</span>
+            <span className="kb-stat ok">{wkDocs.filter((d) => d.parse_status === 'completed').length} 篇已就绪</span>
+            <span className="kb-stat warn">{wkDocs.filter((d) => d.parse_status !== 'completed' && d.parse_status !== 'failed').length} 篇解析中</span>
+          </div>
+          <div className="kb-filters">
+            <button className="btn btn-ghost btn-sm" onClick={fetchWkDocs}>刷新</button>
+          </div>
+        </div>
+      ) : (
       <div className="kb-toolbar">
         <div className="kb-stats">
           {stats && (
@@ -312,10 +509,47 @@ export default function AdminKB({ token, onNotify }) {
           </button>
         </div>
       </div>
+      )}
 
       {notice && <div className={`kb-notice ${notice.ok ? 'ok' : 'err'}`}>{notice.text}</div>}
 
       {/* 文档列表 */}
+      {wkOn ? (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th>标题</th><th>解析状态</th><th>类型</th><th>大小</th><th>入库时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              {wkDocs.length === 0 && (
+                <tr><td colSpan={6} className="kb-empty-row">WeKnora 知识库暂无文档</td></tr>
+              )}
+              {wkDocs.map((d) => {
+                const [stLabel, stCls] = WK_PARSE[d.parse_status] || [d.parse_status, 'status-pill'];
+                return (
+                  <tr key={d.id}>
+                    <td>
+                      <strong>{d.title}</strong>
+                      {d.error_message && <div className="muted">{String(d.error_message).slice(0, 120)}</div>}
+                    </td>
+                    <td><span className={stCls}>{stLabel}</span></td>
+                    <td className="muted">{(d.file_type || '').toUpperCase()}</td>
+                    <td className="muted">{fmtSize(d.file_size)}</td>
+                    <td className="muted">{d.created_at}</td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === d.id + 'wkprev' || d.parse_status !== 'completed'}
+                        title={d.parse_status !== 'completed' ? '解析完成后可预览' : '查看切分结果'}
+                        onClick={() => wkOpenPreview(d)}>分块预览</button>
+                      <button className="btn btn-danger btn-sm" disabled={busyId === d.id + 'wkdel'}
+                        onClick={() => wkDelete(d)}>删除</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
@@ -383,7 +617,9 @@ export default function AdminKB({ token, onNotify }) {
           </tbody>
         </table>
       </div>
+      )}
       {previewDoc && <DocPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+      {wkPreview && <DocPreview doc={wkPreview} onClose={() => setWkPreview(null)} />}
     </div>
   );
 }

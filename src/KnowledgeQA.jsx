@@ -104,7 +104,8 @@ export default function KnowledgeQA() {
       const res = await fetch(`${API_BASE}/kb/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, history }),
+        // conversation_id：门户用它在 WeKnora 侧续同一个会话（多轮上下文，W3）
+        body: JSON.stringify({ question: q, history, conversation_id: active.id }),
       });
       if (!res.ok) throw new Error(await readError(res));
       const data = await res.json();

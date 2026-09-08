@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 
 const TYPE_LABEL = { upload: '用户上传', url: 'URL 采集', link: '友情链接采集' };
-const STATUS_LABEL = { pending: '待审核', approved: '已入库', rejected: '已拒绝' };
-const STATUS_CLASS = { pending: 'status-pill pending', approved: 'status-pill online', rejected: 'status-pill offline' };
+const STATUS_LABEL = { pending: '待审核', approved: '已入库', rejected: '已拒绝', processing: '解析中', completed: '已完成', failed: '解析失败' };
+const STATUS_CLASS = { pending: 'status-pill pending', approved: 'status-pill online', rejected: 'status-pill offline', processing: 'status-pill pending', completed: 'status-pill online', failed: 'status-pill offline' };
 
 const PREVIEW_LEN = 240;
 
@@ -25,8 +25,8 @@ export default function DocPreview({ doc, onClose }) {
                 </a>
               )}
               <span className={STATUS_CLASS[doc.status] || 'status-pill'}>{STATUS_LABEL[doc.status] || doc.status}</span>
-              <span className="muted">{TYPE_LABEL[doc.type] || doc.type}</span>
-              <span className="muted">{doc.chars || 0} 字</span>
+              {doc.type && <span className="muted">{TYPE_LABEL[doc.type] || doc.type}</span>}
+              {doc.chars != null && <span className="muted">{doc.chars} 字</span>}
               <span className="muted">{doc.chunk_count || (doc.chunks && doc.chunks.length) || 0} 个知识块</span>
               {doc.created_at && <span className="muted">{(doc.created_at).slice(0, 16).replace('T', ' ')}</span>}
             </div>
