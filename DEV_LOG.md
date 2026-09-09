@@ -1,7 +1,7 @@
 # 智能制造专区 · 开发日志（DEV_LOG）
 
 > 项目：智能制造专区（ai-manufacturing-zone）
-> 服务器：180.127.11.169:21828（容器）→ 应用端口 8804 → 外部地址 http://180.127.11.169:21886/
+> 服务器：阿里云 ECS 47.115.223.159（Docker Compose）→ 应用端口 8804 → 外部地址 http://47.115.223.159:8804
 > 技术栈：前端 React + Vite（单文件 SPA），后端 Flask（Python），数据存 JSON 文件
 > 本文档用通俗中文记录开发过程，方便非技术同事看懂在做什么。
 
@@ -1096,3 +1096,22 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - 触发词「介绍一下」「是什么」偏泛，多智能体继续增多后 planner 需要升级为打分制。
 
 **改动文件**：`agents/kb_assistant.py`（新）、`agents/runtime.py`、`agents/base.py`、`agents/registry.py`、`agents/prd_advisor.py`、`app.py`（kb_ask_core + 注入 + _ask_weknora 重构 + 邮件话术）、`src/AgentKB.jsx`（新）、`src/main.jsx`、`src/style.css`、`src/DemoBooking.jsx`、`tests/test_agents.py`；服务器 backups/a3/（app.py、agents、dist）。
+
+---
+
+## 三十二、演示环境迁移阿里云 + 仓库公开（2026-09-09）
+
+**做了什么**：
+1. 演示环境从速桥云容器迁到阿里云 ECS：新地址 http://47.115.223.159:8804 ，还是同一套 Docker Compose 部署，容器配了 unless-stopped 自启动，7×24 常驻在线。
+2. GitHub 仓库转公开：https://github.com/TomekChen/ai-manufacturing-zone 。之前是私有仓库，外人打开是 404，现在所有人可访问。
+3. 本文件头部"服务器"一行同步改成阿里云地址；顺手把运行时配置 data/config.json 加进 .gitignore，防止以后 git add -A 把本地配置误传上去。
+
+**为什么**：
+- 简历求职需要稳定在线的演示地址。速桥云的容器是租用环境，到期回收后环境就没了；阿里云 ECS 是自己的服务器，地址长期不变，简历里三个项目（CAD 建模 / 智能制造专区 / MES 缺陷检测）的在线体验都指向它。
+- 项目地址从"整理开源中"换成真实仓库链接之后，面试官点开就能看到代码和这份开发日志，比一句"整理中"有说服力。
+
+**顺带交代**：
+- 部署内容没变：还是 Flask 后端 + React 单文件 SPA + JSON 数据文件，只是搬到了新机器；data/ 下的数据文件继续在服务器上持久化。
+- 同机三个演示项目内存实测：专区约 46MB、MES 缺陷检测约 308MB、CAD 工作室约 14MB，服务器 15GB 内存余量很大，三个演示长期同时在线没有压力。
+
+**涉及文件**：DEV_LOG.md（本文件）、.gitignore（新增 data/config.json）
