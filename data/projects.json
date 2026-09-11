@@ -5,7 +5,7 @@
     "role": "多模态视频生成平台",
     "desc": "支持本地 41GB 模型与云 API 的视频生成工作台，集成阿里云百炼 MaaS 自定义模型。",
     "url": "http://219.133.7.139:31180",
-    "image": "",
+    "image": "/uploads/cover_shijie.png",
     "caps": [
       "文生视频",
       "图生视频",
@@ -14,7 +14,8 @@
     ],
     "color": "purple",
     "alive": false,
-    "last_check": "2026-09-08T01:23:07.097164"
+    "last_check": "2026-09-11T14:16:38.446237",
+    "scenario": "售后服务"
   },
   {
     "id": "b8acd9e402048983",
@@ -22,11 +23,82 @@
     "role": "高性能 3D 建筑编辑器",
     "desc": "Pascal Editor 是一款基于 WebGPU 的高性能 3D 建筑编辑器，支持可视化场景搭建、 节点化建模与 AI 智能体集成。已部署至智星云，点击下方按钮即可进入。",
     "url": "http://180.127.11.169:21882/",
-    "image": "/uploads/b302f8d9f3f5634c.png",
+    "image": "/uploads/cover_pascal.png",
     "caps": [],
     "color": "blue",
     "alive": false,
-    "last_check": "2026-09-08T01:23:11.188209",
-    "heartbeatUrl": "http://127.0.0.1:8800/"
+    "last_check": "2026-09-11T14:16:38.448669",
+    "heartbeatUrl": "http://127.0.0.1:8800/",
+    "scenario": "研发设计"
+  },
+  {
+    "id": "1e9a5a905ec17390",
+    "name": "NexusHive",
+    "role": "工业级低空无人机智能调度与管理平台",
+    "desc": "一款工业级低空无人机智能调度与管理平台，集成大疆上云 API、PX4/Mavlink 自组网、EMQX/MQTT 实时链路、Mars3D+Cesium 三维引擎与 ThinkPHP 8 微服务框架，覆盖设备管理、航线编辑、任务下发、三维监控、媒体归档全流程。",
+    "url": "http://180.127.11.169:21885/index.html",
+    "heartbeatUrl": "",
+    "image": "/uploads/cover_nexus.png",
+    "caps": [],
+    "color": "green",
+    "alive": false,
+    "last_check": "2026-09-11T14:16:38.528322",
+    "scenario": "生产制造"
+  },
+  {
+    "id": "9a0066e1f379581f",
+    "name": "智能观测平台",
+    "role": "基于 OpenTelemetry 的 AI 原生 APM 可观测性平台",
+    "desc": "基于 OpenTelemetry 的 AI 原生 APM 可观测性平台，支持 Trace / Metric / Log 一站式采集、服务拓扑可视化与多智能体智能排障。\n\n**核心能力**：\n\n- OpenTelemetry 原生 OTLP 接入（gRPC/HTTP）\n- 全链路追踪、服务拓扑、RED 指标看板\n- 内置 AI 助手，支持自然语言问数、根因分析、巡检报告\n- 阈值告警与多渠道通知\n- 兼容 SkyWalking 协议，便于平滑迁移",
+    "url": "http://180.127.11.169:21883/",
+    "heartbeatUrl": "",
+    "image": "/uploads/cover_obs.png",
+    "caps": [],
+    "color": "blue",
+    "alive": false,
+    "last_check": "2026-09-11T14:16:38.610701",
+    "scenario": "其他"
+  },
+  {
+    "id": "58e677c591fe6150",
+    "name": "3D 机房可视化控制台",
+    "role": "可视化的机柜系统",
+    "desc": "可视化的机柜系统是一套面向数据中心运维的资产与可视化管理平台，基于 Vue 3 + Three.js + Vite 构建前端骨架，内置 2D 机柜图与 3D 机房拓扑，支持故障管理、上下架工单、Excel 导入导出、邮件通知、加密备份恢复、运维知识库、权限审计、IP 白名单与设备数字孪生。",
+    "url": "http://180.127.11.169:21887",
+    "heartbeatUrl": "",
+    "image": "/uploads/cover_dcr.png",
+    "caps": [],
+    "color": "blue",
+    "alive": false,
+    "last_check": "2026-09-11T14:16:38.686825",
+    "scenario": "其他"
+  },
+  {
+    "id": "e2837043bbc60bf6",
+    "name": "Pascal Editor",
+    "role": "基于 WebGPU 的高性能 3D 建筑编辑器",
+    "desc": "Pascal Editor 是一款基于 WebGPU 的高性能 3D 建筑编辑器，采用 Next.js 16 + React 19 + React Three Fiber 技术栈。支持可视化搭建场地→楼宇→楼层→墙体/楼板/天花的空间结构，节点化建模、实时 3D 渲染、场景本地持久化（SQLite）与 MCP 智能体集成。",
+    "url": "http://180.127.11.169:21882",
+    "heartbeatUrl": "",
+    "image": "/uploads/cover_pascal.png",
+    "caps": [],
+    "color": "blue",
+    "alive": false,
+    "last_check": "2026-09-11T14:16:38.766192",
+    "scenario": "研发设计"
+  },
+  {
+    "id": "abf3bf2976c355f8",
+    "name": "Snail AI · 企业级 AI 智能体平台",
+    "role": "基于 Spring Boot 4 + Spring AI 构建的企业级 AI 智能体平台",
+    "desc": "Snail AI 是基于 Spring Boot 4 + Spring AI 构建的企业级 AI 智能体平台，开箱即用地提供多模型管理、智能体编排、RAG 知识库、长期记忆与技能管理能力，配套现代化后台管理与标准化 OpenAPI，支持快速接入与二次开发。",
+    "url": "http://180.127.11.169:21884/snail-ai/",
+    "heartbeatUrl": "",
+    "image": "/uploads/cover_snail.png",
+    "caps": [],
+    "color": "blue",
+    "alive": false,
+    "last_check": "2026-09-11T14:16:38.851719",
+    "scenario": "研发设计"
   }
 ]

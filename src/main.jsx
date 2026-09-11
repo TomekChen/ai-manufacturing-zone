@@ -492,6 +492,23 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
 }
 
 /* ===== 主应用 ===== */
+/* ===== P1 首页包装升级：套件闭环 / 部门场景 / 演示动线（配置即改，无需动逻辑） ===== */
+// 智能体四步闭环（按注册表 id 映射；新智能体可不配，卡片自动省略该行）
+const AGENT_FLOWS = {
+  'prd-advisor': ['聊需求', '出草案', '对标知识库', '迭代成稿'],
+  'kb-assistant': ['提问题', '检索知识库', '附引用作答', '不足即明说'],
+};
+
+// 部门场景（呼应"全部门全行业 AI 转型"定位；项目卡按 scenario 字段归组，缺省归"其他"）
+const SCENARIOS = ['研发设计', '生产制造', '质量检测', '供应链', '售后服务'];
+
+// 演示动线：一条照着点就能讲的 3 分钟剧本（kind=agent 打开体验弹窗，kind=link 新窗口打开外部系统）
+const TOUR_STEPS = [
+  { no: '01', title: '客户来了，先出方案', desc: '跟售前方案师聊几句需求，当场生成一份对标知识库的《AI 落地方案》草案。', cta: '打开售前方案师', kind: 'agent', agentId: 'prd-advisor' },
+  { no: '02', title: '方案说法，要有依据', desc: '把方案里的问题抛给知识管家，回答附知识库引用出处，引用不足时明确说明、不编造。', cta: '打开知识管家', kind: 'agent', agentId: 'kb-assistant' },
+  { no: '03', title: 'AI 质检，长什么样', desc: '打开已上线的工业缺陷检测系统，看方案里的能力真实跑在产线数据上。', cta: '打开缺陷检测', kind: 'link', url: 'http://47.115.223.159:8090' },
+];
+
 function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -504,6 +521,7 @@ function App() {
   const [liveAgents, setLiveAgents] = useState([]); // 已上线智能体注册表（/api/agents）
   const [activeAgent, setActiveAgent] = useState(null); // 正在体验的智能体
   const [bookingFor, setBookingFor] = useState(null); // 预约演示：null | 项目对象
+  const [scenario, setScenario] = useState('全部'); // 行业场景筛选（P1 包装升级）
   const [theme, setTheme] = useState(() => {
     if (typeof document !== 'undefined') {
       const t = document.documentElement.getAttribute('data-theme');
@@ -593,6 +611,12 @@ function App() {
 
   const displayTitle = config?.title || '智能制造专区';
   const displayAgents = projects?.length > 0 ? projects : AGENTS_FALLBACK;
+  // 行业场景筛选：项目卡按 scenario 字段归组，未标注的归"其他"
+  const scenarioOf = (p) => (SCENARIOS.includes(p.scenario) ? p.scenario : '其他');
+  const hasOther = (displayAgents || []).some((p) => scenarioOf(p) === '其他');
+  const shownProjects = scenario === '全部'
+    ? displayAgents
+    : displayAgents.filter((p) => scenarioOf(p) === scenario);
 
   if (!loaded) return <div className="loading">加载中...</div>;
 
@@ -610,8 +634,9 @@ function App() {
             {displayTitle}
           </div>
           <ul className="nav-links">
-            <li><a href="#architecture">架构图</a></li>
-            <li><a href="#agents">项目矩阵</a></li>
+            <li><a href="#agents">智能体</a></li>
+            <li><a href="#tour">演示动线</a></li>
+            <li><a href="#scenarios">行业场景</a></li>
             <li><a href="#qa">知识问答</a></li>
           </ul>
           <div className="nav-actions">
@@ -635,15 +660,32 @@ function App() {
         </div>
       </nav>
 
-      <ArchitectureDiagram />
+      {/* P1 包装升级：Hero 首屏 —— 主口号 + 副口号（老板定位原话）+ 双按钮 + 工程化数据背书 */}
+      <header className="hero">
+        <div className="container">
+          <div className="hero-tag">智能制造 · AI 转型解决方案</div>
+          <h1 className="hero-title">让每家制造厂，<br />都有自己的 <span className="hero-accent">AI 供应商</span></h1>
+          <p className="hero-sub">聚焦智能制造全场景、覆盖全部门全行业的 AI 转型解决方案：售前方案、知识问答、质量检测等智能体持续接入，一个门户统一体验、统一预约、统一交付。</p>
+          <div className="hero-actions">
+            <button className="btn btn-primary" onClick={() => document.getElementById('agents')?.scrollIntoView({ behavior: 'smooth' })}>体验智能体</button>
+            <button className="btn btn-ghost" onClick={() => document.getElementById('tour')?.scrollIntoView({ behavior: 'smooth' })}>3 分钟演示动线 →</button>
+          </div>
+          <div className="hero-stats">
+            <div className="hero-stat"><b>2 个</b><span>智能体已上线</span></div>
+            <div className="hero-stat"><b>150+</b><span>项自动化测试</span></div>
+            <div className="hero-stat"><b>引用可溯</b><span>回答附知识库出处</span></div>
+            <div className="hero-stat"><b>7×24</b><span>心跳监控值守</span></div>
+          </div>
+        </div>
+      </header>
 
       <section className="section agents-section" id="agents">
         <div className="container">
           <div className="section-header">
-            <div className="section-tag"><span className="section-tag-line"></span>项目矩阵<span className="section-tag-line"></span></div>
-            <h2 className="section-title">{projects?.length > 0 ? '接入的项目' : '六大专业智能体'}</h2>
+            <div className="section-tag"><span className="section-tag-line"></span>智能体套件<span className="section-tag-line"></span></div>
+            <h2 className="section-title">已上线的智能体套件</h2>
             <p className="section-desc">
-              {projects?.length > 0 ? '管理员可动态维护项目，系统实时心跳检测运行状态' : '每个智能体专注一个制造场景，协同工作覆盖工厂全链路'}
+              每个智能体专注一个制造场景，注册表统一调度，新场景智能体持续接入
             </p>
           </div>
           {liveAgents.length > 0 && (
@@ -658,12 +700,20 @@ function App() {
                         <span>{a.emoji || '🤖'}</span>
                       </div>
                       <div>
-                        <div className="agent-name">{a.name}</div>
+                        <div className="agent-name">{a.name} <span className="suite-chip">套件 v1.0</span></div>
                         <div className="agent-role">{a.role}</div>
                       </div>
                       <span className="live-badge">已上线</span>
                     </div>
                     <p className="agent-desc">{a.desc}</p>
+                    {/* 四步闭环：按注册表 id 读取演示剧本，未配置的智能体自动省略 */}
+                    {AGENT_FLOWS[a.id] && (
+                      <div className="agent-flow">
+                        {AGENT_FLOWS[a.id].map((s, k) => (
+                          <span className="agent-flow-step" key={k}>{s}{k < AGENT_FLOWS[a.id].length - 1 && <i>→</i>}</span>
+                        ))}
+                      </div>
+                    )}
                     {Array.isArray(a.caps) && a.caps.length > 0 && (
                       <ul className="agent-capabilities">
                         {a.caps.map((c, j) => <li key={j}>{c}</li>)}
@@ -680,8 +730,52 @@ function App() {
               })}
             </div>
           )}
+        </div>
+      </section>
+
+      {/* P1 包装升级：演示动线 —— 一条照着点就能讲的 3 分钟剧本，治"不好演示" */}
+      <section className="section tour-section" id="tour">
+        <div className="container">
+          <div className="section-header">
+            <div className="section-tag"><span className="section-tag-line"></span>演示动线<span className="section-tag-line"></span></div>
+            <h2 className="section-title">3 分钟，看懂一家制造厂的 AI 供应商</h2>
+            <p className="section-desc">从聊需求到看落地，三个真实系统串成一条演示线：方案怎么来、依据在哪查、能力怎么落地。</p>
+          </div>
+          <div className="tour-grid">
+            {TOUR_STEPS.map((t) => (
+              <div className="tour-card" key={t.no}>
+                <div className="tour-no">{t.no}</div>
+                <div className="tour-title">{t.title}</div>
+                <p className="tour-desc">{t.desc}</p>
+                {t.kind === 'agent' ? (
+                  <button className="btn btn-primary btn-sm"
+                          onClick={() => { const ag = liveAgents.find((x) => x.id === t.agentId); if (ag) setActiveAgent(ag); }}>
+                    {t.cta}
+                  </button>
+                ) : (
+                  <a className="btn btn-primary btn-sm" href={t.url} target="_blank" rel="noreferrer">{t.cta} ↗</a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* P1 包装升级：行业场景与案例 —— 离线项目按部门场景收纳，未常驻转预约 */}
+      <section className="section" id="scenarios">
+        <div className="container">
+          <div className="section-header">
+            <div className="section-tag"><span className="section-tag-line"></span>行业场景<span className="section-tag-line"></span></div>
+            <h2 className="section-title">行业场景与案例</h2>
+            <p className="section-desc">覆盖研发、生产、质量、供应链、售后的 AI 转型场景；未常驻项目支持预约演示，随叫随起。</p>
+          </div>
+          <div className="scenario-chips">
+            {['全部', ...SCENARIOS, ...(hasOther ? ['其他'] : [])].map((s) => (
+              <button key={s} className={`scenario-chip${scenario === s ? ' active' : ''}`} onClick={() => setScenario(s)}>{s}</button>
+            ))}
+          </div>
           <div className="agents-grid">
-            {displayAgents.map((a, i) => {
+            {shownProjects.map((a, i) => {
               const pc = toHex(a.color);
               return (
               <div className="agent-card" key={a.id || i} style={{ '--proj-color': pc, '--proj-soft': withAlpha(pc, 0.14), '--proj-glow': withAlpha(pc, 0.35) }}>
@@ -730,6 +824,9 @@ function App() {
               </div>
               );
             })}
+            {shownProjects.length === 0 && (
+              <p className="scenario-empty">该场景的项目正在整理中，欢迎预约演示，按需定制。</p>
+            )}
             {isAdmin && (
               <button className="agent-card agent-add-card" onClick={() => setEditorProject({})}>
                 <div className="agent-add-inner">
@@ -742,6 +839,8 @@ function App() {
           </div>
         </div>
       </section>
+
+      <ArchitectureDiagram />
 
       <KnowledgeQA />
 
