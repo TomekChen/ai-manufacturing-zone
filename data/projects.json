@@ -18,20 +18,6 @@
     "scenario": "售后服务"
   },
   {
-    "id": "b8acd9e402048983",
-    "name": "pascal editor",
-    "role": "高性能 3D 建筑编辑器",
-    "desc": "Pascal Editor 是一款基于 WebGPU 的高性能 3D 建筑编辑器，支持可视化场景搭建、 节点化建模与 AI 智能体集成。已部署至智星云，点击下方按钮即可进入。",
-    "url": "http://180.127.11.169:21882/",
-    "image": "/uploads/cover_pascal.png",
-    "caps": [],
-    "color": "blue",
-    "alive": false,
-    "last_check": "2026-09-11T14:16:38.448669",
-    "heartbeatUrl": "http://127.0.0.1:8800/",
-    "scenario": "研发设计"
-  },
-  {
     "id": "1e9a5a905ec17390",
     "name": "NexusHive",
     "role": "工业级低空无人机智能调度与管理平台",
