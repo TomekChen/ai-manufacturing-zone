@@ -25,6 +25,8 @@ export default function AgentPRD({ agent, onClose }) {
   const [result, setResult] = useState(null);
   const [saved, setSaved] = useState(null); // {id, version} 方案会话已存档状态（A4-T1）
   const savedRef = useRef(null); // 保存 session_id 跨多次生成（ref 防闭包陈旧）
+  const [history, setHistory] = useState(null); // 会话全部版本（T2 回放用）
+  const [viewV, setViewV] = useState(0); // 当前展示的版本号（0=未指定）
 
   // A2：端点来自注册表，而非硬编码；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/prd-advisor/run';
@@ -34,6 +36,8 @@ export default function AgentPRD({ agent, onClose }) {
     setLoading(true);
     setResult(null);
     setSaved(null);
+    setHistory(null);
+    setViewV(0);
     const inputs = { company, industry, business, mode, raw_requirements: raw };
     try {
       const res = await fetch(endpoint, {
@@ -56,7 +60,13 @@ export default function AgentPRD({ agent, onClose }) {
         });
         if (sv.ok) {
           const sd = await sv.json();
-          if (sd.ok) savedRef.current = { id: sd.session_id, version: sd.version };
+          if (sd.ok) {
+            savedRef.current = { id: sd.session_id, version: sd.version };
+            setViewV(sd.version);
+            // 拉取会话全量版本，驱动历史版本条
+            const hr = await fetch('/api/prd-sessions/' + sd.session_id);
+            if (hr.ok) setHistory(await hr.json());
+          }
         }
       } catch { /* 存档失败不影响看结果 */ }
       setSaved(savedRef.current);
@@ -169,6 +179,22 @@ export default function AgentPRD({ agent, onClose }) {
 
           {result && (
             <div className="prd-result">
+              {history && history.versions && history.versions.length > 0 && (
+                <div className="prd-version-bar">
+                  <span className="prd-version-label">历史版本</span>
+                  {history.versions.map(v => (
+                    <button key={v.no}
+                            className={`prd-ver-chip ${viewV === v.no ? 'active' : ''}`}
+                            title={`回放第 ${v.no} 版（${v.ts}）`}
+                            onClick={() => { setViewV(v.no); setResult(v.result); }}>
+                      v{v.no}
+                    </button>
+                  ))}
+                  {viewV !== saved?.version && (
+                    <span className="prd-version-hint">正在回放 v{viewV}，非最新版</span>
+                  )}
+                </div>
+              )}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${result.grounded ? 'ok' : 'muted'}`}>
                   {result.grounded ? `已接地知识库 ${result.hits} 条` : '未接地（知识库无相关命中）'}
