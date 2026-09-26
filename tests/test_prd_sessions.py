@@ -137,10 +137,36 @@ def test_bucket_isolated():
           "rows=%d" % len(read_file()))
 
 
+def test_share_page(sid):
+    print("\n[只读分享页 /s/<id>]")
+    r = c.get("/s/%s" % sid)
+    html = r.get_data(as_text=True)
+    check("分享页 200", r.status_code == 200)
+    check("Content-Type 是 HTML", "text/html" in (r.content_type or ""))
+    check("页面含会话标题", INPUTS["company"] in html)
+    check("页面含 v1 与 v2 方案正文",
+          V1_RESULT["prd"] in html and V2_RESULT["prd"] in html)
+    check("无编辑/运行入口（只读）", "/api/prd-sessions\" POST" not in html and "生成 PRD" not in html)
+    r404 = c.get("/s/not-exist-xyz")
+    check("不存在的会话 404", r404.status_code == 404)
+
+    # XSS：prd 里的 HTML 必须被转义
+    clear_bucket()
+    evil = {"prd": "<script>alert(1)</script>方案", "grounded": False,
+            "hits": 0, "mode": "guide", "model": "stub", "sources": []}
+    re_ = c.post("/api/prd-sessions", json={"inputs": INPUTS, "result": evil})
+    sid2 = (re_.get_json() or {}).get("session_id")
+    r2 = c.get("/s/%s" % sid2)
+    html2 = r2.get_data(as_text=True)
+    check("分享页 script 标签被转义", "<script>alert" not in html2
+          and "&lt;script&gt;" in html2)
+
+
 if __name__ == "__main__":
     sid = test_save_and_versions()
     test_get_session(sid)
     test_validation()
+    test_share_page(sid)
     test_bucket_isolated()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

@@ -2,13 +2,14 @@ import os
 import re
 import json
 import time
+import html
 import threading
 import secrets
 import hashlib
 from functools import wraps
 from datetime import datetime
 from urllib.parse import urlparse
-from flask import Flask, send_from_directory, request, jsonify
+from flask import Flask, send_from_directory, request, jsonify, Response
 from werkzeug.utils import secure_filename
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -994,6 +995,85 @@ def api_prd_session_get(sid):
     if sess is None:
         return jsonify({"error": "会话不存在"}), 404
     return jsonify(sess)
+
+
+_SHARE_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} · 售前方案会话</title>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f6f7f9; color: #1f2328; }}
+  header {{ background: #fff; border-bottom: 1px solid #e5e7eb; padding: 18px 24px; }}
+  header h1 {{ margin: 0; font-size: 18px; }}
+  header .sub {{ margin-top: 6px; font-size: 13px; color: #6b7280; }}
+  main {{ max-width: 860px; margin: 24px auto; padding: 0 16px; }}
+  .ver {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+         margin-bottom: 20px; overflow: hidden; }}
+  .ver-bar {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+             padding: 12px 16px; border-bottom: 1px solid #f0f1f3; }}
+  .badge {{ font-size: 12px; padding: 2px 10px; border-radius: 999px;
+           background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; }}
+  .badge.ok {{ color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }}
+  .ver.no {{ font-weight: 600; font-size: 14px; margin-right: 4px; }}
+  .ver pre {{ margin: 0; padding: 16px; white-space: pre-wrap; word-break: break-word;
+             font-size: 14px; line-height: 1.7; font-family: inherit; }}
+  footer {{ text-align: center; color: #9ca3af; font-size: 12px; padding: 24px 0 40px; }}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 {title} · 售前方案会话</h1>
+  <div class="sub">智能制造专区 · 由售前方案师生成 · 只读分享（共 {nver} 个版本，旧版本保留可追溯）</div>
+</header>
+<main>
+{versions}
+</main>
+<footer>让每家制造厂，都有自己的 AI 供应商</footer>
+</body>
+</html>"""
+
+_SHARE_VERSION = """<div class="ver" id="v{no}">
+  <div class="ver-bar">
+    <span class="ver no">v{no}</span>
+    <span class="badge">{ts}</span>
+    <span class="badge">{mode}</span>
+    {grounded}
+  </div>
+  <pre>{prd}</pre>
+</div>"""
+
+
+@app.route("/s/<sid>", methods=["GET"])
+def prd_session_share(sid):
+    """方案会话只读分享页：无登录，收链接的人直接看全部版本（最新在前）。"""
+    sess = next((s for s in load_json(PRD_SESSIONS_FILE, []) if s.get("id") == sid),
+                None)
+    if sess is None:
+        return jsonify({"error": "会话不存在"}), 404
+    parts = []
+    for v in reversed(sess.get("versions", [])):
+        res = v.get("result") or {}
+        grounded = ('<span class="badge ok">已接地知识库 %s 条</span>' % res.get("hits")
+                    if res.get("grounded") else
+                    '<span class="badge">未接地知识库</span>')
+        parts.append(_SHARE_VERSION.format(
+            no=html.escape(str(v.get("no", "?"))),
+            ts=html.escape(str(v.get("ts", ""))),
+            mode=html.escape("引导模式" if res.get("mode") == "guide" else "规范化模式"),
+            grounded=grounded,
+            prd=html.escape(str(res.get("prd") or "")),
+        ))
+    page = _SHARE_PAGE.format(
+        title=html.escape(str(sess.get("title") or "方案会话")),
+        nver=len(sess.get("versions", [])),
+        versions="\n".join(parts),
+    )
+    return Response(page, mimetype="text/html")
 
 
 # ── 预约演示（离线项目卡的转化入口） ─────────────────────────────────────────

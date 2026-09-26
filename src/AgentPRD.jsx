@@ -98,6 +98,20 @@ export default function AgentPRD({ agent, onClose }) {
     URL.revokeObjectURL(url);
   }, [result, company]);
 
+  // 分享：复制只读链接（收链接的人无需登录即可看全部版本，最新在前）
+  const copyShareLink = useCallback(async () => {
+    if (!saved?.id) return;
+    const link = `${location.origin}/s/${saved.id}`;
+    try { await navigator.clipboard.writeText(link); }
+    catch {
+      const ta = document.createElement('textarea');
+      ta.value = link; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    const btn = document.getElementById('agent-prd-share-btn');
+    if (btn) { const old = btn.textContent; btn.textContent = '已复制 ✓'; setTimeout(() => { btn.textContent = old; }, 1600); }
+  }, [saved]);
+
   const canSubmit = company.trim() && business.trim().length >= 5 && !loading;
 
   return (
@@ -170,6 +184,12 @@ export default function AgentPRD({ agent, onClose }) {
                 <>
                   <button className="btn btn-ghost" onClick={copyPrd}>复制全文</button>
                   <button className="btn btn-ghost" onClick={downloadPrd}>下载 .md</button>
+                  {saved && (
+                    <button id="agent-prd-share-btn" className="btn btn-ghost" onClick={copyShareLink}
+                            title="复制只读链接，发给同事/客户即可查看本会话全部版本">
+                      分享会话链接
+                    </button>
+                  )}
                 </>
               )}
             </div>
