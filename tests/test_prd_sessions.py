@@ -162,11 +162,28 @@ def test_share_page(sid):
           and "&lt;script&gt;" in html2)
 
 
+def test_admin_list(sid):
+    print("\n[后台会话列表]")
+    r = c.get("/api/admin/prd-sessions")
+    check("未带 token 401", r.status_code == 401)
+    TOKEN = app.hash_password(app.ADMIN_ACCOUNT + app.ADMIN_PASSWORD
+                              + app.SECRET_KEY)[:32]
+    r2 = c.get("/api/admin/prd-sessions", headers={"Authorization": "Bearer " + TOKEN})
+    rows = r2.get_json() or []
+    check("带 token 200", r2.status_code == 200)
+    check("返回摘要列表且含刚才的会话",
+          any(x.get("id") == sid for x in rows))
+    check("摘要带 version_count 不带全文",
+          all("versions" not in x and isinstance(x.get("version_count"), int)
+              for x in rows))
+
+
 if __name__ == "__main__":
     sid = test_save_and_versions()
     test_get_session(sid)
     test_validation()
     test_share_page(sid)
+    test_admin_list(sid)
     test_bucket_isolated()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

@@ -1119,6 +1119,21 @@ def api_admin_demo_bookings():
     return jsonify(list(reversed(load_json(DEMO_BOOKINGS_FILE, []))))
 
 
+@app.route("/api/admin/prd-sessions", methods=["GET"])
+@require_admin
+def api_admin_prd_sessions():
+    """后台方案会话列表（新→旧）：只回摘要不带全文，够管理端盘点沉淀量。"""
+    rows = []
+    for s in reversed(load_json(PRD_SESSIONS_FILE, [])):
+        versions = s.get("versions") or []
+        rows.append({
+            "id": s.get("id"), "title": s.get("title"),
+            "created": s.get("created"), "updated": s.get("updated"),
+            "version_count": len(versions),
+        })
+    return jsonify(rows)
+
+
 @app.route("/api/admin/links", methods=["GET", "POST"])
 @require_admin
 def api_admin_links():

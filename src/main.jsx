@@ -13,6 +13,7 @@ import AgentPRD from './AgentPRD';
 import AgentKB from './AgentKB';
 import DemoBooking from './DemoBooking';
 import AdminBookings from './AdminBookings';
+import AdminSessions from './AdminSessions';
 
 const API_BASE = '/api';
 
@@ -419,6 +420,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           <button className={activeTab === 'prd' ? 'active' : ''} onClick={() => setActiveTab('prd')}>PRD 生成</button>
           <button className={activeTab === 'links' ? 'active' : ''} onClick={() => setActiveTab('links')}>友情链接</button>
           <button className={activeTab === 'bookings' ? 'active' : ''} onClick={() => setActiveTab('bookings')}>预约演示</button>
+          <button className={activeTab === 'sessions' ? 'active' : ''} onClick={() => setActiveTab('sessions')}>方案会话</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
         <div className="admin-body">
@@ -464,6 +466,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           {activeTab === 'prd' && <AdminPRD token={token} />}
           {activeTab === 'links' && <AdminLinks token={token} />}
           {activeTab === 'bookings' && <AdminBookings token={token} />}
+          {activeTab === 'sessions' && <AdminSessions token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">
               <label>站点标题</label>
