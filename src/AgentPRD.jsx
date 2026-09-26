@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { MarkdownView } from './AdminPRD';
 
 async function readError(res) {
@@ -23,6 +23,8 @@ export default function AgentPRD({ agent, onClose }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null);
+  const [saved, setSaved] = useState(null); // {id, version} 方案会话已存档状态（A4-T1）
+  const savedRef = useRef(null); // 保存 session_id 跨多次生成（ref 防闭包陈旧）
 
   // A2：端点来自注册表，而非硬编码；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/prd-advisor/run';
@@ -31,17 +33,33 @@ export default function AgentPRD({ agent, onClose }) {
     setErr('');
     setLoading(true);
     setResult(null);
+    setSaved(null);
+    const inputs = { company, industry, business, mode, raw_requirements: raw };
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company, industry, business, mode, raw_requirements: raw }),
+        body: JSON.stringify(inputs),
       });
       if (!res.ok) { setErr(await readError(res)); return; }
       const data = await res.json();
       // A2 起统一契约 {ok, agent_id, result, refs, confidence}；PRD 明细在 result 里
       // 兼容旧扁平返回（A1 缓存的页面拿到旧结构也能渲染）
-      setResult(data.result && typeof data.result === 'object' ? data.result : data);
+      const prdResult = data.result && typeof data.result === 'object' ? data.result : data;
+      setResult(prdResult);
+      // 生成成功即存档：同一弹窗内多次生成 = 同一会话的多个版本（旧版永不覆盖）
+      try {
+        const sv = await fetch('/api/prd-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: savedRef.current?.id, inputs, result: prdResult }),
+        });
+        if (sv.ok) {
+          const sd = await sv.json();
+          if (sd.ok) savedRef.current = { id: sd.session_id, version: sd.version };
+        }
+      } catch { /* 存档失败不影响看结果 */ }
+      setSaved(savedRef.current);
     } catch (e) {
       setErr('网络错误：' + (e.message || e));
     } finally {
@@ -157,6 +175,11 @@ export default function AgentPRD({ agent, onClose }) {
                 </span>
                 <span className="prd-badge muted">模式：{result.mode === 'guide' ? '引导' : '规范化'}</span>
                 <span className="prd-badge muted">模型：{result.model}</span>
+                {saved && (
+                  <span className="prd-badge ok" title="本次会话已存档，旧版本不会被覆盖">
+                    已存档 v{saved.version}
+                  </span>
+                )}
               </div>
               {result.sources && result.sources.length > 0 && (
                 <div className="prd-sources">

@@ -943,6 +943,59 @@ def api_agents_prd_run_legacy():
     return jsonify(flat), res.status_code
 
 
+# ── 售前方案会话沉淀（A4-T1：生成即存为版本，append-only 不改旧版） ─────────
+PRD_SESSIONS_FILE = os.path.join(DATA_DIR, "prd_sessions.json")
+
+
+@app.route("/api/prd-sessions", methods=["POST"])
+def api_prd_session_save():
+    """保存一次生成结果：无 session_id 新建会话（v1），有则追加版本（v+1）。
+
+    旧版本永不修改（可回放的"账本"），会话留最近 100 个防膨胀。
+    body: {session_id?, title?, inputs: {...}, result: {...}}
+    """
+    if rate_limited(request.remote_addr, limit=30, window=3600, bucket="prd_session"):
+        return jsonify({"error": "保存太频繁，请稍后再试"}), 429
+    p = request.get_json(force=True, silent=True) or {}
+    inputs = p.get("inputs") if isinstance(p.get("inputs"), dict) else {}
+    result = p.get("result") if isinstance(p.get("result"), dict) else {}
+    prd_text = (result.get("prd") or "").strip()
+    if not prd_text:
+        return jsonify({"error": "result.prd 不能为空"}), 400
+    title = (p.get("title") or inputs.get("company") or "").strip()[:60]
+    if not title:
+        return jsonify({"error": "缺少会话标题（title 或 inputs.company）"}), 400
+    sid = (p.get("session_id") or "").strip()
+    sessions = load_json(PRD_SESSIONS_FILE, [])
+    now = datetime.now().isoformat(timespec="seconds")
+    sess = None
+    if sid:
+        sess = next((s for s in sessions if s.get("id") == sid), None)
+    if sess is None:
+        # 新会话（含传入了未知 session_id 的情况：重新开一个，不炸）
+        sess = {"id": secrets.token_hex(8), "title": title, "created": now,
+                "updated": now, "versions": []}
+        sessions.append(sess)
+    version = {"no": len(sess["versions"]) + 1, "ts": now,
+               "inputs": inputs, "result": result}
+    sess["versions"].append(version)
+    sess["updated"] = now
+    if not sess.get("title"):
+        sess["title"] = title
+    save_json(PRD_SESSIONS_FILE, sessions[-100:])
+    return jsonify({"ok": True, "session_id": sess["id"], "version": version["no"]})
+
+
+@app.route("/api/prd-sessions/<sid>", methods=["GET"])
+def api_prd_session_get(sid):
+    """读取一个会话（含全部版本），前端回放历史用。"""
+    sess = next((s for s in load_json(PRD_SESSIONS_FILE, []) if s.get("id") == sid),
+                None)
+    if sess is None:
+        return jsonify({"error": "会话不存在"}), 404
+    return jsonify(sess)
+
+
 # ── 预约演示（离线项目卡的转化入口） ─────────────────────────────────────────
 DEMO_BOOKINGS_FILE = os.path.join(DATA_DIR, "demo_bookings.json")
 
