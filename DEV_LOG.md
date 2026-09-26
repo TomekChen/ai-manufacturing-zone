@@ -1219,3 +1219,30 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 - 未做 agit 的 fork/分支（方向分叉）；触发词路由未动。
 
 **改动文件**：app.py（4 端点+分享页模板）、src/AgentPRD.jsx（自动存档+版本条+分享按钮）、src/AdminSessions.jsx（新）、src/main.jsx（页签）、src/style.css（版本条样式）、tests/test_prd_sessions.py（新，31 断言）；服务器 backups/a4/（app.py+旧 dist）。
+## 三十六、R1-R3 代码审计重构（2026-09-26）
+
+**背景**：用户要求对全项目做代码审计——降耦合、抽重复、单一职责、提高内聚。量化盘点后锁定三处最大坏味：readError 在前端复制了 11 份、app.py 1184 行里方案会话 4 端点+分享页模板占了 ~200 行、限流三行样板在函数体里重复 8 处。原则：**公共 API（路由/入参/返回形状）零变化**，纯内部结构改善。
+
+**R1 前端 readError 去重（commit 698daf7）**：
+- 新建 `src/api.js`：留最富的 readError 实现（JSON error/message → HTML `<title>` 提取 → 透传文本），加 API_BASE/apiGet/apiPost/apiDelete/apiUpload。
+- 11 个组件文件删本地副本改 `import { readError } from './api'`；main.jsx 的请求封装一并迁走。
+- 冻结验证：所有函数签名与错误提取行为逐字保持（含 HTML 兜底与 HTTP 状态码文案）。
+
+**R2 方案会话账本拆出 app.py（commit 68ee811）**：
+- 新建 `prd_sessions.py`：Blueprint + 依赖注入（同 agents/runtime 模式），init(data_dir, load_json, save_json, rate_limited, require_admin) 注入共享设施；admin 路由在 init() 里动态注册（require_admin 到装配时才可用）。
+- app.py 装配区三行接线：import → init → register_blueprint；HTTP 路由与数据形状与拆分前完全一致。
+- 模块不 import app，依赖方向单向：app.py → prd_sessions → 注入的设施。
+
+**R3 限流装饰器收敛（commit c50822c）**：
+- app.py 新增 `@limiter(limit, window, bucket, message)` 装饰器（bucket 支持 `{view_arg}` 占位），6 处端点函数体内的三行样板换成装饰器：kb/upload、kb/ask、kb/feedback、admin/prd/generate、agents/dispatch、demo/booking。
+- **语义保留两处例外**：agent run 两端点保持函数体内手写 rate_limited——先 404（未知智能体）后 429 的顺序语义是设计好的，不消耗未知 agent 的配额；admin/prd/generate 的 @limiter 放在 @require_admin **之下**，保住"先鉴权后限流"（401 先于 429）。
+
+**测试结果**：全量 250 断言绿（test_agents 72 / test_booking 28 / test_prd 44 / test_prd_sessions 31 / rag 系列 75）；build 过（index-3EXUPZhK.js）。关键回归点：test_booking 的 429 用例依赖 demo_booking 桶，装饰器化后仍绿，证明桶机制等价。
+
+**部署**：服务器 Dockerfile 补 `COPY source/prd_sessions.py .`（两套 Dockerfile 的 COPY 清单坑再+1）；备份 source+data 后上传 app.py/prd_sessions.py/dist，`up -d --build` 重建；独立验证脚本 **13/13**（含会话存/追加/v1 保留/分享页转义/401/404-先于-429/feedback 31 次触发 429）。验证脚本曾对 POST 会话用了 dict 形状的 result.prd 吃 500——**是我 payload 形状错了不是应用 bug**（契约里 result.prd 是 Markdown 字符串，前端复制/下载均按字符串用），改脚本后全绿；测试会话已从生产数据清除。
+
+**改动文件**：src/api.js（新）、11 个组件文件、prd_sessions.py（新）、app.py（拆出+装饰器）、Dockerfile；服务器 backups/source.bak-20260926-*.tar.gz + data.bak-20260926-*.tar.gz。
+
+**已知限制 / 后续建议**：
+- app.py 仍有 ~1000 行，下一步可按"配置/鉴权/知识库/智能体/杂项"继续拆 Blueprint，但收益递减，先做功能切片。
+- SPA 兜底路由会把"不存在的 /api 路径"也回 200 HTML——排障时看状态码会误判，要看响应体（本次验证脚本已按形状断言）。
