@@ -1,18 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DocPreview from './DocPreview';
 import renderMarkdown from './markdown';
+import { readError } from './api';
 
 const API_BASE = '/api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 const STATUS_LABEL = {
   pending: ['待审核', 'status-pill pending'],

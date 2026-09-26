@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import renderMarkdown from './markdown';
+import { readError } from './api';
 
 const API_BASE = '/api';
 const STORE_KEY = 'kb_chats_v1';
@@ -8,15 +9,6 @@ const HISTORY_MAX = 12; // 与后端 config.HISTORY_MAX 对齐，只带最近若
 
 const INTENT_LABEL = { knowledge: '知识问答', smalltalk: '闲聊', offtopic: '超出范围' };
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 const uid = () => (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
 const newChat = () => ({ id: uid(), title: '新对话', createdAt: Date.now(), messages: [] });

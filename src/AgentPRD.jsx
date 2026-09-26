@@ -1,15 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { MarkdownView } from './AdminPRD';
+import { readError } from './api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 /* ===== 售前方案师 · 公开在线体验弹窗（A1 曳光弹，A2 接入注册表） =====
    与后台版 AdminPRD 同一引擎；端点取自智能体注册表（agent.endpoint），

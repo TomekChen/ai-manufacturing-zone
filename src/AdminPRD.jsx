@@ -1,16 +1,8 @@
 import React, { useState, useCallback } from 'react';
+import { readError } from './api';
 
 const API_BASE = '/api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 // ── 轻量 Markdown 渲染（不引第三方库）：标题 / 粗体 / 行内码 / 有序无序列表 / 表格 / 分隔线 ──
 function inline(text) {

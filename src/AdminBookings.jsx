@@ -1,16 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { readError } from './api';
 
 const API_BASE = '/api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 /* ===== 管理后台 · 预约演示列表 =====
    GET /api/admin/demo/bookings（需管理员 token），后端按时间倒序返回，最多 200 条。 */

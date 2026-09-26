@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import renderMarkdown from './markdown';
+import { readError } from './api';
 
 /* ===== 知识管家 · 公开在线体验弹窗（A3 第二个上线智能体） =====
    经注册表 endpoint 调用，与首页「知识问答」区同一条后端链路。
@@ -11,15 +12,6 @@ const SUGGESTIONS = [
   '制造企业上 MES 系统一般分几步？',
 ];
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 export default function AgentKB({ agent, onClose }) {
   const [question, setQuestion] = useState('');

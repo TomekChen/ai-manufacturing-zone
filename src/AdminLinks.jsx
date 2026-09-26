@@ -1,16 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DocPreview from './DocPreview';
+import { readError } from './api';
 
 const API_BASE = '/api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 /* ===== 后台「友情链接」标签页：增删改 + 一键采集入库 ===== */
 export default function AdminLinks({ token }) {

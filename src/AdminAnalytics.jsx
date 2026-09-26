@@ -1,16 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { readError } from './api';
 
 const API_BASE = '/api';
 
-async function readError(res) {
-  const text = await res.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.error) return json.error;
-    if (json.message) return json.message;
-  } catch {}
-  return text || `请求失败（HTTP ${res.status}）`;
-}
 
 // 策略中文名（展示用，key 来自后端聚合，注册表为准）
 const RETR_LABEL = { vector: '纯向量', bm25: 'BM25', hybrid: '混合', unknown: '未知' };
