@@ -355,6 +355,13 @@ def rate_limited(ip, limit=10, window=60, bucket="default"):
         return False
 
 
+# ── 装配区：方案会话账本（A4/R2 自 app.py 拆出，依赖注入后挂载） ──────────────
+import prd_sessions  # noqa: E402
+
+prd_sessions.init(DATA_DIR, load_json, save_json, rate_limited, require_admin)
+app.register_blueprint(prd_sessions.bp)
+
+
 @app.route("/api/kb/stats", methods=["GET"])
 def api_kb_stats():
     return jsonify(KB.stats())
@@ -944,138 +951,6 @@ def api_agents_prd_run_legacy():
     return jsonify(flat), res.status_code
 
 
-# ── 售前方案会话沉淀（A4-T1：生成即存为版本，append-only 不改旧版） ─────────
-PRD_SESSIONS_FILE = os.path.join(DATA_DIR, "prd_sessions.json")
-
-
-@app.route("/api/prd-sessions", methods=["POST"])
-def api_prd_session_save():
-    """保存一次生成结果：无 session_id 新建会话（v1），有则追加版本（v+1）。
-
-    旧版本永不修改（可回放的"账本"），会话留最近 100 个防膨胀。
-    body: {session_id?, title?, inputs: {...}, result: {...}}
-    """
-    if rate_limited(request.remote_addr, limit=30, window=3600, bucket="prd_session"):
-        return jsonify({"error": "保存太频繁，请稍后再试"}), 429
-    p = request.get_json(force=True, silent=True) or {}
-    inputs = p.get("inputs") if isinstance(p.get("inputs"), dict) else {}
-    result = p.get("result") if isinstance(p.get("result"), dict) else {}
-    prd_text = (result.get("prd") or "").strip()
-    if not prd_text:
-        return jsonify({"error": "result.prd 不能为空"}), 400
-    title = (p.get("title") or inputs.get("company") or "").strip()[:60]
-    if not title:
-        return jsonify({"error": "缺少会话标题（title 或 inputs.company）"}), 400
-    sid = (p.get("session_id") or "").strip()
-    sessions = load_json(PRD_SESSIONS_FILE, [])
-    now = datetime.now().isoformat(timespec="seconds")
-    sess = None
-    if sid:
-        sess = next((s for s in sessions if s.get("id") == sid), None)
-    if sess is None:
-        # 新会话（含传入了未知 session_id 的情况：重新开一个，不炸）
-        sess = {"id": secrets.token_hex(8), "title": title, "created": now,
-                "updated": now, "versions": []}
-        sessions.append(sess)
-    version = {"no": len(sess["versions"]) + 1, "ts": now,
-               "inputs": inputs, "result": result}
-    sess["versions"].append(version)
-    sess["updated"] = now
-    if not sess.get("title"):
-        sess["title"] = title
-    save_json(PRD_SESSIONS_FILE, sessions[-100:])
-    return jsonify({"ok": True, "session_id": sess["id"], "version": version["no"]})
-
-
-@app.route("/api/prd-sessions/<sid>", methods=["GET"])
-def api_prd_session_get(sid):
-    """读取一个会话（含全部版本），前端回放历史用。"""
-    sess = next((s for s in load_json(PRD_SESSIONS_FILE, []) if s.get("id") == sid),
-                None)
-    if sess is None:
-        return jsonify({"error": "会话不存在"}), 404
-    return jsonify(sess)
-
-
-_SHARE_PAGE = """<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} · 售前方案会话</title>
-<style>
-  :root {{ color-scheme: light; }}
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         background: #f6f7f9; color: #1f2328; }}
-  header {{ background: #fff; border-bottom: 1px solid #e5e7eb; padding: 18px 24px; }}
-  header h1 {{ margin: 0; font-size: 18px; }}
-  header .sub {{ margin-top: 6px; font-size: 13px; color: #6b7280; }}
-  main {{ max-width: 860px; margin: 24px auto; padding: 0 16px; }}
-  .ver {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-         margin-bottom: 20px; overflow: hidden; }}
-  .ver-bar {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-             padding: 12px 16px; border-bottom: 1px solid #f0f1f3; }}
-  .badge {{ font-size: 12px; padding: 2px 10px; border-radius: 999px;
-           background: #f3f4f6; border: 1px solid #e5e7eb; color: #6b7280; }}
-  .badge.ok {{ color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }}
-  .ver.no {{ font-weight: 600; font-size: 14px; margin-right: 4px; }}
-  .ver pre {{ margin: 0; padding: 16px; white-space: pre-wrap; word-break: break-word;
-             font-size: 14px; line-height: 1.7; font-family: inherit; }}
-  footer {{ text-align: center; color: #9ca3af; font-size: 12px; padding: 24px 0 40px; }}
-</style>
-</head>
-<body>
-<header>
-  <h1>🧭 {title} · 售前方案会话</h1>
-  <div class="sub">智能制造专区 · 由售前方案师生成 · 只读分享（共 {nver} 个版本，旧版本保留可追溯）</div>
-</header>
-<main>
-{versions}
-</main>
-<footer>让每家制造厂，都有自己的 AI 供应商</footer>
-</body>
-</html>"""
-
-_SHARE_VERSION = """<div class="ver" id="v{no}">
-  <div class="ver-bar">
-    <span class="ver no">v{no}</span>
-    <span class="badge">{ts}</span>
-    <span class="badge">{mode}</span>
-    {grounded}
-  </div>
-  <pre>{prd}</pre>
-</div>"""
-
-
-@app.route("/s/<sid>", methods=["GET"])
-def prd_session_share(sid):
-    """方案会话只读分享页：无登录，收链接的人直接看全部版本（最新在前）。"""
-    sess = next((s for s in load_json(PRD_SESSIONS_FILE, []) if s.get("id") == sid),
-                None)
-    if sess is None:
-        return jsonify({"error": "会话不存在"}), 404
-    parts = []
-    for v in reversed(sess.get("versions", [])):
-        res = v.get("result") or {}
-        grounded = ('<span class="badge ok">已接地知识库 %s 条</span>' % res.get("hits")
-                    if res.get("grounded") else
-                    '<span class="badge">未接地知识库</span>')
-        parts.append(_SHARE_VERSION.format(
-            no=html.escape(str(v.get("no", "?"))),
-            ts=html.escape(str(v.get("ts", ""))),
-            mode=html.escape("引导模式" if res.get("mode") == "guide" else "规范化模式"),
-            grounded=grounded,
-            prd=html.escape(str(res.get("prd") or "")),
-        ))
-    page = _SHARE_PAGE.format(
-        title=html.escape(str(sess.get("title") or "方案会话")),
-        nver=len(sess.get("versions", [])),
-        versions="\n".join(parts),
-    )
-    return Response(page, mimetype="text/html")
-
-
 # ── 预约演示（离线项目卡的转化入口） ─────────────────────────────────────────
 DEMO_BOOKINGS_FILE = os.path.join(DATA_DIR, "demo_bookings.json")
 
@@ -1118,20 +993,6 @@ def api_admin_demo_bookings():
     """后台预约列表（新→旧），供管理端「预约」页签查看。"""
     return jsonify(list(reversed(load_json(DEMO_BOOKINGS_FILE, []))))
 
-
-@app.route("/api/admin/prd-sessions", methods=["GET"])
-@require_admin
-def api_admin_prd_sessions():
-    """后台方案会话列表（新→旧）：只回摘要不带全文，够管理端盘点沉淀量。"""
-    rows = []
-    for s in reversed(load_json(PRD_SESSIONS_FILE, [])):
-        versions = s.get("versions") or []
-        rows.append({
-            "id": s.get("id"), "title": s.get("title"),
-            "created": s.get("created"), "updated": s.get("updated"),
-            "version_count": len(versions),
-        })
-    return jsonify(rows)
 
 
 @app.route("/api/admin/links", methods=["GET", "POST"])

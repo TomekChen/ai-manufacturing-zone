@@ -23,10 +23,11 @@ if "bs4" in sys.modules and not hasattr(sys.modules["bs4"], "BeautifulSoup"):
     sys.modules["bs4"].BeautifulSoup = object
 
 import app  # noqa: E402
+import prd_sessions  # noqa: E402
 
-# 会话文件重定向到临时目录，不污染本地 data/
+# 会话文件重定向到临时目录，不污染本地 data/（R2 起路径归 prd_sessions 模块管）
 _TMP = tempfile.mkdtemp(prefix="prd_session_test_")
-app.PRD_SESSIONS_FILE = os.path.join(_TMP, "prd_sessions.json")
+prd_sessions._data_dir = _TMP
 
 c = app.app.test_client()
 PASS, FAIL = 0, 0
@@ -47,7 +48,7 @@ def clear_bucket():
 
 
 def read_file():
-    return app.load_json(app.PRD_SESSIONS_FILE, [])
+    return prd_sessions._load_json(prd_sessions._sessions_file(), [])
 
 
 V1_RESULT = {"prd": "# 方案 v1\n第一版内容", "grounded": True, "hits": 8,
