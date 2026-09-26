@@ -355,6 +355,24 @@ def rate_limited(ip, limit=10, window=60, bucket="default"):
         return False
 
 
+def limiter(limit, window, bucket="default", message="请求太频繁，请稍后再试"):
+    """限流装饰器（R3 收敛样板）：限流是端点第一条语句时用它。
+
+    bucket 支持 "{view_arg}" 占位（如 "agent_{agent_id}"）。
+    注意：需要"先做其他校验再限流"的端点（如 agent run 先 404）保持
+    函数体内手写 rate_limited，避免顺序语义变化。
+    """
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            b = bucket.format(**request.view_args) if "{" in bucket else bucket
+            if rate_limited(request.remote_addr, limit=limit, window=window, bucket=b):
+                return jsonify({"error": message}), 429
+            return fn(*args, **kwargs)
+        return wrapper
+    return deco
+
+
 # ── 装配区：方案会话账本（A4/R2 自 app.py 拆出，依赖注入后挂载） ──────────────
 import prd_sessions  # noqa: E402
 
@@ -373,10 +391,9 @@ def api_links():
 
 
 @app.route("/api/kb/upload", methods=["POST"])
+@limiter(6, 300, message="上传太频繁，请稍后再试")
 def api_kb_upload():
     """公开上传：TXT/MD/PDF，进入待审核状态。"""
-    if rate_limited(request.remote_addr, limit=6, window=300):
-        return jsonify({"error": "上传太频繁，请稍后再试"}), 429
     if "file" not in request.files:
         return jsonify({"error": "没有收到文件"}), 400
     file = request.files["file"]
@@ -499,13 +516,12 @@ agents.runtime.kb_ask = kb_ask_core
 
 
 @app.route("/api/kb/ask", methods=["POST"])
+@limiter(10, 60, message="提问太频繁，请稍后再试")
 def api_kb_ask():
     """知识库问答：意图路由（知识/闲聊/超范围）+ 多轮上下文 + 可插拔检索 + LLM 生成。
     W3：引擎开启时 knowledge 意图转发 WeKnora chat；问候/闲聊/知识外仍走原意图链路；
     WEKNORA_ENABLED=false 一键回到全旧链路（回滚网）。
     A3：核心逻辑抽到 kb_ask_core，智能体与视图共用。"""
-    if rate_limited(request.remote_addr, limit=10, window=60):
-        return jsonify({"error": "提问太频繁，请稍后再试"}), 429
     payload = request.get_json(force=True, silent=True) or {}
     try:
         result = kb_ask_core(payload.get("question"), history=payload.get("history"),
@@ -521,10 +537,9 @@ def api_kb_ask():
 
 
 @app.route("/api/kb/feedback", methods=["POST"])
+@limiter(30, 60, message="操作太频繁，请稍后再试")
 def api_kb_feedback():
     """前台对某次回答点 👍/👎，写回对应问答遥测（Slice 4）。公开接口，仅需合法 ask_id。"""
-    if rate_limited(request.remote_addr, limit=30, window=60):
-        return jsonify({"error": "操作太频繁，请稍后再试"}), 429
     payload = request.get_json(force=True, silent=True) or {}
     ask_id = (payload.get("ask_id") or "").strip()
     raw = (payload.get("rating") or "").strip().lower()
@@ -848,14 +863,13 @@ def api_admin_kb_eval_results():
 # ── PRD 生成器（对齐老板新方向：AI 智能体平台转型售前工具） ──────────────────
 @app.route("/api/admin/prd/generate", methods=["POST"])
 @require_admin
+@limiter(6, 60, message="生成太频繁，请稍后再试")
 def api_admin_prd_generate():
     """填「公司 + 业务介绍」→ 生成一份面向该客户的《AI 智能体平台功能需求 PRD》。
 
     mode=guide 引导（客户不懂，先给草稿+澄清问题）；mode=normalize 规范化（整理客户原始需求）。
     生成前会用知识库检索做行业接地（空库自动降级）。LLM 调用较慢，前端需 loading。
     """
-    if rate_limited(request.remote_addr, limit=6, window=60):
-        return jsonify({"error": "生成太频繁，请稍后再试"}), 429
     if not kb_prd.has_api_key():
         return jsonify({"error": "未配置 DASHSCOPE_API_KEY 环境变量，无法生成 PRD"}), 400
     payload = request.get_json(force=True, silent=True) or {}
@@ -878,13 +892,12 @@ def api_agents():
 
 
 @app.route("/api/agents/dispatch", methods=["POST"])
+@limiter(5, 3600, bucket="agent_dispatch", message="请求太频繁，请稍后再试")
 def api_agents_dispatch():
     """planner 派发：任务文本 → triggers 关键词路由到 live 智能体。
 
     body: {task, auto_run?, payload?}；auto_run=true 时代为执行并带回结果。
     """
-    if rate_limited(request.remote_addr, limit=5, window=3600, bucket="agent_dispatch"):
-        return jsonify({"error": "请求太频繁，请稍后再试"}), 429
     payload = request.get_json(force=True, silent=True) or {}
     task = (payload.get("task") or "").strip()
     if not task:
@@ -956,10 +969,9 @@ DEMO_BOOKINGS_FILE = os.path.join(DATA_DIR, "demo_bookings.json")
 
 
 @app.route("/api/demo/booking", methods=["POST"])
+@limiter(3, 3600, bucket="demo_booking", message="提交太频繁，请稍后再试")
 def api_demo_booking():
     """公开预约：称呼+联系方式必填；落盘后尝试邮件通知（发送失败不影响受理）。"""
-    if rate_limited(request.remote_addr, limit=3, window=3600, bucket="demo_booking"):
-        return jsonify({"error": "提交太频繁，请稍后再试"}), 429
     p = request.get_json(force=True, silent=True) or {}
     name = (p.get("name") or "").strip()[:40]
     contact = (p.get("contact") or "").strip()[:80]
