@@ -82,6 +82,39 @@ python tests/test_prd_sessions.py    # 单个文件
 for f in tests/test_*.py; do python "$f"; done   # 全部（10 文件，260+ 断言）
 ```
 
+## MCP 接入（A5）
+
+`mcp_bridge.py` 把本平台的智能体暴露为标准 MCP 工具，任何 MCP 客户端（Claude Desktop、Qoder、Cursor 等）无需改造服务端即可调用。桥跑在**客户端本机**（stdio），全部请求走门户公开 API——限流、校验、错误形状与服务端网页体验完全一致。
+
+| 工具 | 说明 | 限流 |
+|---|---|---|
+| `list_agents` | 查看在线智能体及能力 | — |
+| `ask_knowledge_base` | 制造业数字化知识问答（附引用） | 10 次/分钟 |
+| `generate_prd_proposal` | 售前方案师生成 PRD | 5 次/小时 |
+| `dispatch_task` | 自然语言任务自动路由到智能体 | 5 次/小时 |
+
+```bash
+# 桥运行在客户端本机，依赖单独装（服务端容器不需要）
+pip install "mcp<2"
+```
+
+客户端配置示例（Claude Desktop `claude_desktop_config.json` / Qoder MCP 设置同构）：
+
+```json
+{
+  "mcpServers": {
+    "ai-manufacturing-zone": {
+      "command": "python",
+      "args": ["/path/to/mcp_bridge.py"],
+      "env": { "PORTAL_BASE_URL": "http://47.115.223.159:8804" }
+    }
+  }
+}
+```
+
+- 指向本地开发环境时把 `PORTAL_BASE_URL` 换成 `http://127.0.0.1:8804`
+- 桥的测试：`.venv/Scripts/python.exe tests/test_mcp_bridge.py`（19 断言，离线打桩不真发请求）
+
 ## Docker 部署
 
 ```bash

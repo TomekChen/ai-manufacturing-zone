@@ -1291,3 +1291,25 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **改动文件**：prd_sessions.py、src/AdminSessions.jsx、tests/test_prd_sessions.py（部署仅 prd_sessions.py + dist，Dockerfile COPY 清单无变化）。
 
 **坑与教训**：线上过期测试不走 mock 时间——直接改容器内落盘 updated 为 31 天前再请求，验证完整真实链路（含 _load_json 序列化）。
+
+## 三十九、A5-MCP 桥：智能体暴露为标准 MCP 工具（2026-09-27）
+
+**背景**：A4 全链路闭环后的下一个切片（借鉴 S-PMS 想法 #1）。目标：让 Claude Desktop / Qoder 等 MCP 客户端直接调用门户的售前方案师、知识管家，把平台变成"别家 AI 的供应商"。
+
+**方案选型**：stdio 桥（`mcp_bridge.py`）跑在客户端本机，全部走门户公开 HTTP API——零服务端改动、不加端口、不碰鉴权，限流/校验/错误形状天然与服务端网页体验一致。远程 SSE/Streamable HTTP 留作后续候选（需要考虑鉴权面）。
+
+**实现**：
+- `mcp_bridge.py`：FastMCP（`mcp<2`，2.x 把 FastMCP 改名 MCPServer 且 API 大改，钉 1.x）。4 个工具：`list_agents`（GET /api/agents，瘦身 triggers/status）、`ask_knowledge_base`（POST /api/kb/ask，只回 answer/sources/intent）、`generate_prd_proposal`（POST /api/agents/prd-advisor/run，make_result 打平——result 上提 + _confidence/_refs 附加）、`dispatch_task`（POST /api/agents/dispatch 原样）。
+- 传输层隔离：`_http(method, path, body)` 唯一 I/O 口，非 2xx/网络错统一收敛 `PortalError`（提取服务端 error 文案）；工具层把 PortalError 转成 `{"error": ...}` 返回而非抛异常（MCP 工具失败对客户端可读）。
+- 依赖不入服务端 requirements.txt——桥只跑在客户端本机。
+
+**测试**：tests/test_mcp_bridge.py 19 断言（离线打桩 _http）：入参映射/result 打平/错误收敛/_flatten_agent_run 边界/_http 真实 urllib 错误路径（HTTPError→带状态码、连接错→带门户地址）。**注意**：桥依赖 mcp 包，只能用项目 .venv 跑本文件（其他套件用 Anaconda 解释器）。全量回归照旧绿。
+
+**E2E 实测**：MCP stdio 客户端（mcp 包 ClientSession）拉起桥 → initialize → list_tools 4 个 → call_tool('list_agents') 拿到 prd-advisor + kb-assistant 的 JSON（isError=False）。FastMCP 会把 list 返回拆成每项一个 text 块，客户端按块解析即可。
+
+**坑与教训**：
+1. 测试用例间污染：前面的用例 monkeypatch 了 `mcp_bridge._http`，错误映射用例忘了还原，测的是打桩不是真传输层——patch 全局函数的用例要保存/还原原引用（或用 fixture 隔离）。
+2. FastMCP 打平 make_result 时 result 可能是非 dict（字符串），先判型再附加元数据，否则 `flat["_confidence"]` 对 str 赋值直接炸——测试抓到。
+3. Windows GBK 终端打 emoji/中文必乱码：冒烟脚本统一 `PYTHONIOENCODING=utf-8` 或 ASCII 化输出。
+
+**改动文件**：mcp_bridge.py（新）、tests/test_mcp_bridge.py（新）、README.md（MCP 接入节）、DEV_LOG.md。服务端零改动，无需部署。
