@@ -6,6 +6,7 @@
 import os
 import sys
 import tempfile
+from datetime import datetime, timedelta
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -235,6 +236,59 @@ def test_ingest(sid):
     prd_sessions._kb = None
 
 
+def _admin_headers():
+    TOKEN = app.hash_password(app.ADMIN_ACCOUNT + app.ADMIN_PASSWORD
+                              + app.SECRET_KEY)[:32]
+    return {"Authorization": "Bearer " + TOKEN}
+
+
+def test_expiry():
+    print("\n[A6 分享链接过期（30 天）]")
+    clear_bucket()
+    r = c.post("/api/prd-sessions", json={"inputs": INPUTS, "result": V1_RESULT})
+    sid = (r.get_json() or {}).get("session_id")
+    check("新鲜会话分享页 200", c.get("/s/%s" % sid).status_code == 200)
+
+    # 直接把 updated 改到 31 天前（数据落盘层模拟时间流逝）
+    rows = prd_sessions._load_json(prd_sessions._sessions_file(), [])
+    old_iso = (datetime.now() - timedelta(days=31)).isoformat(timespec="seconds")
+    for s in rows:
+        if s["id"] == sid:
+            s["updated"] = old_iso
+    prd_sessions._save_json(prd_sessions._sessions_file(), rows)
+
+    re_ = c.get("/s/%s" % sid)
+    html = re_.get_data(as_text=True)
+    check("31 天未更新分享页 410", re_.status_code == 410, str(re_.status_code))
+    check("过期页是 HTML 且不泄方案内容", "text/html" in (re_.content_type or "")
+          and V1_RESULT["prd"] not in html and "已过期" in html)
+    check("过期会话 API 回放仍 200（数据不丢，仅链接失效）",
+          c.get("/api/prd-sessions/%s" % sid).status_code == 200)
+
+    rows2 = c.get("/api/admin/prd-sessions", headers=_admin_headers()).get_json() or []
+    me = next((x for x in rows2 if x.get("id") == sid), None)
+    check("列表摘要标记 expired=true", bool(me and me.get("expired")))
+
+
+def test_delete(sid):
+    print("\n[A6 管理端删除会话]")
+    H = _admin_headers()
+    r = c.delete("/api/admin/prd-sessions/%s" % sid)
+    check("未带 token 401", r.status_code == 401)
+    r404 = c.delete("/api/admin/prd-sessions/ghost", headers=H)
+    check("未知会话 404", r404.status_code == 404)
+
+    before = len(read_file())
+    r2 = c.delete("/api/admin/prd-sessions/%s" % sid, headers=H)
+    body = r2.get_json() or {}
+    check("删除 200", r2.status_code == 200 and body.get("deleted") == sid, str(body))
+    check("落盘少 1 个会话", len(read_file()) == before - 1)
+    check("分享页随之 404", c.get("/s/%s" % sid).status_code == 404)
+    check("API 读取随之 404", c.get("/api/prd-sessions/%s" % sid).status_code == 404)
+    rows = c.get("/api/admin/prd-sessions", headers=H).get_json() or []
+    check("列表不再出现该会话", all(x.get("id") != sid for x in rows))
+
+
 if __name__ == "__main__":
     sid = test_save_and_versions()
     test_get_session(sid)
@@ -242,6 +296,8 @@ if __name__ == "__main__":
     test_share_page(sid)
     test_admin_list(sid)
     test_ingest(sid)
+    test_expiry()
+    test_delete(sid)
     test_bucket_isolated()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

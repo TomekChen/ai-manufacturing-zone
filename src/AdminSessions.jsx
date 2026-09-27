@@ -51,6 +51,24 @@ export default function AdminSessions({ token }) {
     }
   };
 
+  const remove = async (s) => {
+    if (!window.confirm(`确定删除会话「${s.title}」？分享页将同时失效，不可恢复。`)) return;
+    setBusy(s.id); setErr(''); setMsg('');
+    try {
+      const res = await fetch(`${API_BASE}/admin/prd-sessions/${s.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      setMsg(`已删除「${s.title}」`);
+      await load();
+    } catch (e) {
+      setErr(e?.message || '删除失败');
+    } finally {
+      setBusy('');
+    }
+  };
+
   if (loading) return <div className="muted" style={{ padding: 12 }}>加载中…</div>;
   if (err) return (
     <div>
@@ -85,6 +103,7 @@ export default function AdminSessions({ token }) {
                   <td className="muted" style={{ whiteSpace: 'nowrap' }}>{(s.created || '').replace('T', ' ')}</td>
                   <td>
                     <span className="status-pill online">v1–v{s.version_count}</span>
+                    {s.expired && <span className="status-pill offline" style={{ marginLeft: 6 }}>分享已过期</span>}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <a className="btn btn-ghost btn-sm" href={`/s/${s.id}`} target="_blank" rel="noreferrer">
@@ -97,7 +116,11 @@ export default function AdminSessions({ token }) {
                               onClick={() => ingest(s)}>
                         {busy === s.id ? '入库中…' : '入库知识库'}
                       </button>
-                    )}
+                    )}{' '}
+                    <button className="btn btn-ghost btn-sm" disabled={busy === s.id}
+                            style={{ color: '#b91c1c' }} onClick={() => remove(s)}>
+                      删除
+                    </button>
                   </td>
                 </tr>
               ))}

@@ -7,10 +7,13 @@ app.py 装配时调用 init(data_dir, rate_limited_fn, require_admin_dec) 注入
 
 存储：data/prd_sessions.json，append-only——旧版本永不修改，留最近 100 个会话。
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, Response
 
 bp = Blueprint("prd_sessions", __name__)
+
+# 分享链接有效期：最后一次更新后 N 天，过期 /s/ 页返回 410（数据仍在，可回放）
+SHARE_TTL_DAYS = 30
 
 # 依赖注入槽（app.py 装配时填充）
 _data_dir = None
@@ -38,6 +41,10 @@ def init(data_dir, load_json_fn, save_json_fn, rate_limited_fn, require_admin_de
                     "api_admin_prd_session_ingest",
                     view_func=require_admin_dec(_api_prd_session_ingest),
                     methods=["POST"])
+    bp.add_url_rule("/api/admin/prd-sessions/<sid>",
+                    "api_admin_prd_session_delete",
+                    view_func=require_admin_dec(_api_prd_session_delete),
+                    methods=["DELETE"])
 
 
 import json  # noqa: E402
@@ -48,6 +55,15 @@ import html  # noqa: E402
 
 def _sessions_file():
     return os.path.join(_data_dir, "prd_sessions.json")
+
+
+def _is_expired(sess):
+    """分享链接是否过期（updated 距今超过 SHARE_TTL_DAYS）。解析失败视为未过期。"""
+    try:
+        updated = datetime.fromisoformat(sess.get("updated"))
+    except (TypeError, ValueError):
+        return False
+    return datetime.now() - updated > timedelta(days=SHARE_TTL_DAYS)
 
 
 @bp.route("/api/prd-sessions", methods=["POST"])
@@ -109,8 +125,20 @@ def _admin_prd_sessions():
             "created": s.get("created"), "updated": s.get("updated"),
             "version_count": len(versions),
             "ingested": bool(s.get("ingested")),
+            "expired": _is_expired(s),
         })
     return jsonify(rows)
+
+
+def _api_prd_session_delete(sid):
+    """删除一个会话（含全部版本）——分享页与 API 同时失效，不可恢复。"""
+    sessions = _load_json(_sessions_file(), [])
+    sess = next((s for s in sessions if s.get("id") == sid), None)
+    if sess is None:
+        return jsonify({"error": "会话不存在"}), 404
+    sessions.remove(sess)
+    _save_json(_sessions_file(), sessions)
+    return jsonify({"ok": True, "deleted": sid})
 
 
 def _api_prd_session_ingest(sid):
@@ -195,14 +223,45 @@ _SHARE_VERSION = """<div class="ver" id="v{no}">
   <pre>{prd}</pre>
 </div>"""
 
+_SHARE_EXPIRED = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>链接已过期 · 售前方案会话</title>
+<style>
+  body {{ margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: #f6f7f9; color: #1f2328; }}
+  .box {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+          padding: 40px 48px; text-align: center; max-width: 420px; }}
+  .box h1 {{ font-size: 40px; margin: 0 0 12px; }}
+  .box p {{ margin: 0 0 6px; color: #6b7280; font-size: 14px; line-height: 1.7; }}
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>🔗⏳</h1>
+    <h2 style="margin:0 0 10px; font-size:18px;">分享链接已过期</h2>
+    <p>为保护客户数据，方案会话分享链接仅保留 %d 天。</p>
+    <p>如需查看方案，请联系您的售前顾问重新分享。</p>
+  </div>
+</body>
+</html>""" % SHARE_TTL_DAYS
+
 
 @bp.route("/s/<sid>", methods=["GET"])
 def prd_session_share(sid):
-    """方案会话只读分享页：无登录，收链接的人直接看全部版本（最新在前）。"""
+    """方案会话只读分享页：无登录，收链接的人直接看全部版本（最新在前）。
+
+    超过 SHARE_TTL_DAYS 未更新则返回 410 过期页（内容不再外泄，数据仍可回放）。
+    """
     sess = next((s for s in _load_json(_sessions_file(), []) if s.get("id") == sid),
                 None)
     if sess is None:
         return jsonify({"error": "会话不存在"}), 404
+    if _is_expired(sess):
+        return Response(_SHARE_EXPIRED, mimetype="text/html", status=410)
     parts = []
     for v in reversed(sess.get("versions", [])):
         res = v.get("result") or {}

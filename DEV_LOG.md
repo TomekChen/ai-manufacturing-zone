@@ -1274,3 +1274,20 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 2. 本地测试文件 redirect 了路径，但更早轮次的残留（data/demo_bookings.json）还在裸奔——gitignore 覆盖所有运行时数据文件，git add -A 前必看 status。
 
 **已知限制 / 后续建议**：app.py 仍 712 行（配置/鉴权/项目/预约/智能体/SPA），再拆收益递减；A5-MCP 桥（把 agents 暴露为 MCP server）待议。
+
+## 三十八、A4 收尾：管理端会话删除 + 分享链接 30 天过期（2026-09-27）
+
+**背景**：A4 的两个已知限制（会话管理端删除入口、分享链接过期机制）收尾，用户拍板"A4收尾"。
+
+**后端（prd_sessions.py）**：
+- `DELETE /api/admin/prd-sessions/<sid>`（init 内 require_admin 注册）：删会话含全部版本，分享页与 API 同时失效，未知会话 404。数据文件 append-only 的例外——删除是管理员的明确动作，不做软删。
+- 分享链接过期：`SHARE_TTL_DAYS = 30`，`_is_expired()` 按 `updated`（最后一次版本追加）距今天数判断，解析失败视为未过期（不误伤）。`/s/<sid>` 过期返回 **410 + 过期页**（不含标题与正文，只提示联系售前顾问）；**API 回放不受影响**——过期只让对外链接失效，沉淀数据仍在账本里可回放/可入库。
+- 管理摘要列表加 `expired` 布尔标记。
+
+**前端（AdminSessions.jsx）**：每行加「删除」按钮（window.confirm 二次确认，红色 ghost 样式）；版本数列对过期会话显示「分享已过期」offline 徽标。build 出 index-B1uUtCzF.js。
+
+**测试结果**：本地全量 273 断言绿（test_prd_sessions 42→54，新增 12：过期域 5 + 删除域 7——401/404/200/落盘减一/分享页 404/API 404/列表消失）；线上容器内验证 10/10（创建→分享页 200→列表带 expired→401/200 删除→410 过期页不泄正文→API 回放仍 200→验证数据清理）。
+
+**改动文件**：prd_sessions.py、src/AdminSessions.jsx、tests/test_prd_sessions.py（部署仅 prd_sessions.py + dist，Dockerfile COPY 清单无变化）。
+
+**坑与教训**：线上过期测试不走 mock 时间——直接改容器内落盘 updated 为 31 天前再请求，验证完整真实链路（含 _load_json 序列化）。
