@@ -17,21 +17,27 @@ _data_dir = None
 _load_json = None     # app.load_json
 _save_json = None     # app.save_json
 _rate_limited = None  # app.rate_limited(ip, limit, window, bucket)
+_kb = None            # app.KB（rag.store.KnowledgeStore）——know-how 入库用
 
 
-def init(data_dir, load_json_fn, save_json_fn, rate_limited_fn, require_admin_dec):
-    """装配注入：存储目录、读写工具、限流函数、管理员鉴权装饰器。
+def init(data_dir, load_json_fn, save_json_fn, rate_limited_fn, require_admin_dec, kb=None):
+    """装配注入：存储目录、读写工具、限流函数、管理员鉴权装饰器、知识库。
 
     admin 端点在这里动态注册——require_admin 到此时才可用。
     """
-    global _data_dir, _load_json, _save_json, _rate_limited
+    global _data_dir, _load_json, _save_json, _rate_limited, _kb
     _data_dir = data_dir
     _load_json = load_json_fn
     _save_json = save_json_fn
     _rate_limited = rate_limited_fn
+    _kb = kb
     bp.add_url_rule("/api/admin/prd-sessions", "api_admin_prd_sessions",
                     view_func=require_admin_dec(_admin_prd_sessions),
                     methods=["GET"])
+    bp.add_url_rule("/api/admin/prd-sessions/<sid>/ingest",
+                    "api_admin_prd_session_ingest",
+                    view_func=require_admin_dec(_api_prd_session_ingest),
+                    methods=["POST"])
 
 
 import json  # noqa: E402
@@ -102,8 +108,41 @@ def _admin_prd_sessions():
             "id": s.get("id"), "title": s.get("title"),
             "created": s.get("created"), "updated": s.get("updated"),
             "version_count": len(versions),
+            "ingested": bool(s.get("ingested")),
         })
     return jsonify(rows)
+
+
+def _api_prd_session_ingest(sid):
+    """know-how 入库飞轮：把会话最新版方案存入知识库（status=pending）。
+
+    管理员点入库 → 文档进待审 → 管理后台「知识库」页签批准 → 知识管家可引用。
+    一个会话只入一次（幂等防重复文档），已入库返回 409 + doc_id。
+    """
+    if _kb is None:
+        return jsonify({"error": "知识库未装配"}), 503
+    sessions = _load_json(_sessions_file(), [])
+    sess = next((s for s in sessions if s.get("id") == sid), None)
+    if sess is None:
+        return jsonify({"error": "会话不存在"}), 404
+    if sess.get("ingested"):
+        return jsonify({"error": "该会话已入库", "doc_id": sess["ingested"].get("doc_id")}), 409
+    versions = sess.get("versions") or []
+    latest = versions[-1] if versions else None
+    prd = str(((latest or {}).get("result") or {}).get("prd") or "").strip()
+    if not prd:
+        return jsonify({"error": "会话没有可入库的方案正文"}), 400
+    title = sess.get("title") or "售前方案会话"
+    text = ("# %s\n\n> 来源：售前方案会话沉淀（共 %d 个版本，本篇取最新 v%s）\n\n%s"
+            % (title, len(versions), (latest or {}).get("no", "?"), prd))
+    doc = _kb.add_text(text, title=title, doc_type="session",
+                       status="pending", url="/s/%s" % sid)
+    sess["ingested"] = {"doc_id": doc.get("id"),
+                        "ts": datetime.now().isoformat(timespec="seconds")}
+    _save_json(_sessions_file(), sessions[-100:])
+    return jsonify({"ok": True,
+                    "doc": {"id": doc.get("id"), "title": doc.get("title"),
+                            "status": doc.get("status")}})
 
 
 _SHARE_PAGE = """<!DOCTYPE html>

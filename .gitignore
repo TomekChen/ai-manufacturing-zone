@@ -19,6 +19,8 @@ data/kb_index.faiss
 data/kb_telemetry.json
 data/kb_eval_results.json
 data/config.json
+data/demo_bookings.json
+data/prd_sessions.json
 *.log
 # 编辑器/系统
 .vscode/

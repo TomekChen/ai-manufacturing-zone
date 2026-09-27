@@ -179,12 +179,69 @@ def test_admin_list(sid):
               for x in rows))
 
 
+class FakeKB:
+    """知识库打桩：记录 add_text 调用，返回假 doc。"""
+
+    def __init__(self):
+        self.calls = []
+
+    def add_text(self, text, title, url="", doc_type="upload",
+                 status="pending", chunking=None):
+        self.calls.append({"text": text, "title": title, "url": url,
+                           "doc_type": doc_type, "status": status})
+        return {"id": "doc_" + str(len(self.calls)), "title": title,
+                "status": status}
+
+
+def test_ingest(sid):
+    print("\n[A4.5 know-how 入库飞轮]")
+    TOKEN = app.hash_password(app.ADMIN_ACCOUNT + app.ADMIN_PASSWORD
+                              + app.SECRET_KEY)[:32]
+    H = {"Authorization": "Bearer " + TOKEN}
+    fake = FakeKB()
+
+    prd_sessions._kb = None
+    r0 = c.post("/api/admin/prd-sessions/%s/ingest" % sid, headers=H)
+    check("知识库未装配 503", r0.status_code == 503)
+
+    prd_sessions._kb = fake
+    r = c.post("/api/admin/prd-sessions/%s/ingest" % sid)
+    check("未带 token 401", r.status_code == 401)
+    check("未鉴权不打知识库", len(fake.calls) == 0)
+
+    r404 = c.post("/api/admin/prd-sessions/ghost/ingest", headers=H)
+    check("未知会话 404", r404.status_code == 404)
+
+    r = c.post("/api/admin/prd-sessions/%s/ingest" % sid, headers=H)
+    body = r.get_json() or {}
+    check("入库 200 ok", r.status_code == 200 and body.get("ok") is True, str(body))
+    check("知识库收到 1 次且 status=pending（人工审核把关）",
+          len(fake.calls) == 1 and fake.calls[0]["status"] == "pending")
+    check("doc_type=session 且 url 指回分享页",
+          fake.calls[0]["doc_type"] == "session"
+          and fake.calls[0]["url"] == "/s/%s" % sid)
+    check("正文取最新版 v2 而非 v1",
+          V2_RESULT["prd"] in fake.calls[0]["text"]
+          and V1_RESULT["prd"] not in fake.calls[0]["text"])
+    check("正文带来源与版本标注", "售前方案会话沉淀" in fake.calls[0]["text"])
+
+    r2 = c.post("/api/admin/prd-sessions/%s/ingest" % sid, headers=H)
+    check("重复入库 409 幂等（不产生重复文档）",
+          r2.status_code == 409 and len(fake.calls) == 1)
+
+    rows = c.get("/api/admin/prd-sessions", headers=H).get_json() or []
+    me = next((x for x in rows if x.get("id") == sid), None)
+    check("列表摘要标记已入库", bool(me and me.get("ingested")))
+    prd_sessions._kb = None
+
+
 if __name__ == "__main__":
     sid = test_save_and_versions()
     test_get_session(sid)
     test_validation()
     test_share_page(sid)
     test_admin_list(sid)
+    test_ingest(sid)
     test_bucket_isolated()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

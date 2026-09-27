@@ -15,13 +15,16 @@ import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-import kb
 import notify
-from rag import evaluate as kb_eval
+from rag.store import KnowledgeStore
+from rag.ingest import extract_pdf_text
 from rag import prd as kb_prd
 from rag import engine as wk_engine
 from rag.intents import classify_intent
 import agents  # import 即注册（agents/registry.py 底部挂载所有智能体实现）
+import kb_admin  # noqa: F401  装配时注册知识库管理域蓝图
+from kb_admin import ALLOWED_KB_EXTS, MAX_KB_SIZE, RETRIEVAL_OPTIONS  # noqa: F401
+from kb_admin import clean_choice as _clean_choice
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 全局上传上限 20MB（知识库文档放宽到 10MB）
@@ -41,8 +44,6 @@ DEFAULT_CONFIG = {"title": "智能制造专区", "accent": "#3b82f6", "canvas": 
 
 ALLOWED_IMAGE_EXTS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
-ALLOWED_KB_EXTS = {"txt", "md", "pdf"}
-MAX_KB_SIZE = 10 * 1024 * 1024  # 知识库文档 10MB
 
 ADMIN_ACCOUNT = os.environ.get("ADMIN_ACCOUNT", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -95,13 +96,6 @@ def require_admin(fn):
             return jsonify({"error": "Unauthorized"}), 401
         return fn(*args, **kwargs)
     return wrapper
-
-
-def _clean_choice(raw, options):
-    """可选入参清洗：空 / 非法值 -> None（交回后端默认），合法值 -> 原样返回。
-    在信任边界挡住未知策略名，避免注入注册表里没有的 key。"""
-    v = (raw or "").strip()
-    return v if v in options else None
 
 
 def check_alive(url, timeout=15):
@@ -332,7 +326,7 @@ def api_admin_login():
 # ===================== 知识库（RAG）=====================
 
 # 全局知识库存储（数据文件在 data/ 挂载卷内，容器重建不丢）
-KB = kb.KnowledgeStore(DATA_DIR)
+KB = KnowledgeStore(DATA_DIR)
 # 智能体运行时注入：WeKnora 关闭时 PRD 回退检索用（agents 包不反向依赖 app）
 agents.runtime.store = KB
 
@@ -376,18 +370,12 @@ def limiter(limit, window, bucket="default", message="请求太频繁，请稍�
 # ── 装配区：方案会话账本（A4/R2 自 app.py 拆出，依赖注入后挂载） ──────────────
 import prd_sessions  # noqa: E402
 
-prd_sessions.init(DATA_DIR, load_json, save_json, rate_limited, require_admin)
+prd_sessions.init(DATA_DIR, load_json, save_json, rate_limited, require_admin, KB)
 app.register_blueprint(prd_sessions.bp)
 
-
-@app.route("/api/kb/stats", methods=["GET"])
-def api_kb_stats():
-    return jsonify(KB.stats())
-
-
-@app.route("/api/links", methods=["GET"])
-def api_links():
-    return jsonify(KB.list_links())
+# ── 装配区：知识库管理域（R4 自 app.py 拆出） ──────────────────────────────
+kb_admin.init(KB, require_admin, DATA_DIR)
+app.register_blueprint(kb_admin.bp)
 
 
 @app.route("/api/kb/upload", methods=["POST"])
@@ -412,7 +400,7 @@ def api_kb_upload():
     try:
         if ext == "pdf":
             import io
-            text = kb.extract_pdf_text(io.BytesIO(blob))
+            text = extract_pdf_text(io.BytesIO(blob))
         else:
             text = blob.decode("utf-8", errors="ignore")
         doc = KB.add_text(text, title=raw_name, doc_type="upload", status="pending")
@@ -508,7 +496,7 @@ def kb_ask_core(question, history=None, retrieval=None, conversation_id=""):
         if intent == "knowledge":
             return _ask_weknora(question, history or [], conversation_id)
     return KB.ask(question, history=history,
-                  retrieval=_clean_choice(retrieval, kb.RETRIEVAL_OPTIONS))
+                  retrieval=_clean_choice(retrieval, RETRIEVAL_OPTIONS))
 
 
 # 智能体运行时注入（A3）：知识管家与公开问答视图共用此内核
@@ -559,305 +547,6 @@ def api_kb_feedback():
     if not ok:
         return jsonify({"error": "问答记录不存在或已过期"}), 404
     return jsonify({"ok": True})
-
-
-@app.route("/api/admin/kb/docs", methods=["GET"])
-@require_admin
-def api_admin_kb_docs():
-    return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
-
-
-@app.route("/api/admin/kb/docs/<doc_id>", methods=["GET"])
-@require_admin
-def api_admin_kb_doc_detail(doc_id):
-    """管理员预览单条文档及分块内容。"""
-    try:
-        detail = KB.get_doc_detail(doc_id)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        return jsonify({"error": "加载失败：%s" % str(e)[:120]}), 500
-    return jsonify(detail)
-
-
-@app.route("/api/admin/kb/docs/<doc_id>/approve", methods=["POST"])
-@require_admin
-def api_admin_kb_approve(doc_id):
-    try:
-        doc = KB.approve(doc_id)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        return jsonify({"error": "入库失败：%s" % str(e)[:120]}), 502
-    return jsonify({"doc": doc, "stats": KB.stats()})
-
-
-@app.route("/api/admin/kb/docs/<doc_id>/reject", methods=["POST"])
-@require_admin
-def api_admin_kb_reject(doc_id):
-    try:
-        doc = KB.reject(doc_id)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 404
-    return jsonify({"doc": doc, "stats": KB.stats()})
-
-
-@app.route("/api/admin/kb/docs/<doc_id>", methods=["DELETE"])
-@require_admin
-def api_admin_kb_delete(doc_id):
-    try:
-        KB.delete(doc_id)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 404
-    return jsonify({"docs": KB.list_docs(), "stats": KB.stats()})
-
-
-def _crawl_to_kb(url, doc_type="url", chunking=None):
-    """抓取 URL 并直接以 approved 状态入库（管理员操作，视为已审核）。"""
-    url = (url or "").strip()
-    if not url.startswith(("http://", "https://")):
-        raise RuntimeError("地址必须以 http:// 或 https:// 开头")
-    title, text = kb.fetch_url_text(url)
-    if not text or len(text.strip()) < 30:
-        raise RuntimeError("页面正文内容太少，无法入库")
-    if kb.looks_like_nav_page(text):
-        raise RuntimeError("抓到的内容像是网站首页/栏目列表（全是标题、没有正文），请粘贴具体文章的详情页地址")
-    doc = KB.add_text(text, title=title or url, url=url,
-                      doc_type=doc_type, status="approved", chunking=chunking)
-    return doc
-
-
-@app.route("/api/admin/kb/crawl", methods=["POST"])
-@require_admin
-def api_admin_kb_crawl():
-    payload = request.get_json(force=True, silent=True) or {}
-    url = (payload.get("url") or "").strip()
-    # WeKnora 引擎开启时采集走 WeKnora（异步解析，入库即 approved，无审核流）
-    if wk_engine.is_enabled():
-        if not url.startswith(("http://", "https://")):
-            return jsonify({"error": "地址必须以 http:// 或 https:// 开头"}), 400
-        try:
-            doc = wk_engine.upload_url(url)
-        except wk_engine.EngineError as e:
-            return jsonify({"error": str(e)}), 502
-        return jsonify({
-            "doc": {"id": doc.get("id"), "title": doc.get("title") or url,
-                    "parse_status": doc.get("parse_status") or "pending"},
-            "message": "已提交 WeKnora 解析（异步），状态稍后自动刷新",
-        })
-    chunking = _clean_choice(payload.get("chunking"), kb.CHUNKING_OPTIONS)
-    try:
-        doc = _crawl_to_kb(url, chunking=chunking)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": "采集失败：%s" % str(e)[:160]}), 502
-    return jsonify({"doc": doc, "message": "采集成功，已入库"})
-
-
-@app.route("/api/admin/kb/options", methods=["GET"])
-@require_admin
-def api_admin_kb_options():
-    """后台下拉框数据源：可选的分块/检索策略及默认值（单一事实来源=注册表，前端不再硬编码）。
-    engine 字段供前端判定走 WeKnora 模式还是旧模式（WEKNORA_ENABLED 回退开关）。"""
-    return jsonify({
-        "chunking": kb.CHUNKING_OPTIONS,
-        "default_chunking": kb.DEFAULT_CHUNKING,
-        "retrieval": kb.RETRIEVAL_OPTIONS,
-        "default_retrieval": kb.DEFAULT_RETRIEVAL,
-        "engine": wk_engine.status(),
-    })
-
-
-@app.route("/api/admin/kb/rebuild", methods=["POST"])
-@require_admin
-def api_admin_kb_rebuild_all():
-    """全库重建：按各文档记录的分块策略重新切块 + 重嵌入（会重花 embedding 额度）。"""
-    try:
-        result = KB.rebuild_all()
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 502
-    except Exception as e:
-        return jsonify({"error": "重建失败：%s" % str(e)[:160]}), 502
-    return jsonify({
-        "result": result, "stats": KB.stats(),
-        "message": "全库重建完成（共 %d 篇 / %d 块）" % (result["docs"], result["chunks"]),
-    })
-
-
-@app.route("/api/admin/kb/docs/<doc_id>/rebuild", methods=["POST"])
-@require_admin
-def api_admin_kb_rebuild_doc(doc_id):
-    """单篇重建：可选换分块策略后重新切块 + 重嵌入。"""
-    payload = request.get_json(force=True, silent=True) or {}
-    chunking = _clean_choice(payload.get("chunking"), kb.CHUNKING_OPTIONS)
-    try:
-        result = KB.rebuild_doc(doc_id, chunking=chunking)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
-    except KeyError as e:
-        return jsonify({"error": "未知分块策略：%s" % str(e)[:80]}), 400
-    except Exception as e:
-        return jsonify({"error": "重建失败：%s" % str(e)[:160]}), 502
-    return jsonify({
-        "doc": result["doc"], "stats": KB.stats(), "re_sharded": result["re_sharded"],
-        "message": "单篇重建完成：%d 块" % result["chunks"],
-    })
-
-
-# ── WeKnora 引擎转发（W2）：管理界面在引擎开启时改走这组端点 ─────────────────
-# SPEC：所有 WeKnora 调用收口在 rag/engine.py；WEKNORA_ENABLED=false 时前端
-# 自动回退旧界面（下方旧端点原样保留，就是回滚网本身）。
-
-@app.route("/api/admin/kb/weknora/status", methods=["GET"])
-@require_admin
-def api_admin_kb_weknora_status():
-    """引擎概览：是否启用/是否已配置/健康检查。"""
-    st = wk_engine.status()
-    st["healthy"] = wk_engine.health() if st["configured"] else None
-    return jsonify(st)
-
-
-@app.route("/api/admin/kb/weknora/docs", methods=["GET"])
-@require_admin
-def api_admin_kb_weknora_docs():
-    """WeKnora 文档列表（含解析状态）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        return jsonify(wk_engine.list_docs())
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.route("/api/admin/kb/weknora/upload", methods=["POST"])
-@require_admin
-def api_admin_kb_weknora_upload():
-    """上传文档到 WeKnora（解析异步，前端轮询刷新状态）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    file = request.files.get("file")
-    if not file or not file.filename:
-        return jsonify({"error": "没有收到文件"}), 400
-    ext = file.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_KB_EXTS:
-        return jsonify({"error": "仅支持 TXT / Markdown / PDF 文件"}), 400
-    blob = file.read()
-    if len(blob) > MAX_KB_SIZE:
-        return jsonify({"error": "文件超过 10MB 限制"}), 400
-    if len(blob) == 0:
-        return jsonify({"error": "文件内容为空"}), 400
-    try:
-        doc_id = wk_engine.upload_file(file.filename, blob)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"id": doc_id, "parse_status": "pending",
-                    "message": "已提交 WeKnora 解析，稍后自动刷新状态"})
-
-
-@app.route("/api/admin/kb/weknora/docs/<kid>", methods=["GET"])
-@require_admin
-def api_admin_kb_weknora_doc(kid):
-    """单文档：解析状态 + 分块预览。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        detail = wk_engine.doc_detail(kid)
-        chunks = wk_engine.doc_chunks(kid)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"doc": detail, "chunks": chunks})
-
-
-@app.route("/api/admin/kb/weknora/docs/<kid>", methods=["DELETE"])
-@require_admin
-def api_admin_kb_weknora_delete(kid):
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        wk_engine.delete_doc(kid)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"ok": True})
-
-
-@app.route("/api/admin/kb/weknora/search", methods=["POST"])
-@require_admin
-def api_admin_kb_weknora_search():
-    """检索调试：直查 WeKnora knowledge-search（分数尺度与问答链路不可混比）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    payload = request.get_json(force=True, silent=True) or {}
-    q = (payload.get("query") or "").strip()
-    if not q:
-        return jsonify({"error": "请输入检索词"}), 400
-    try:
-        hits = wk_engine.search(q, top_k=8)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"hits": hits})
-
-
-@app.route("/api/admin/kb/analytics", methods=["GET"])
-@require_admin
-def api_admin_kb_analytics():
-    """问答看板聚合（Slice 4）：总量/拒绝率/各策略对比/时间趋势/👍👎/未命中清单。"""
-    try:
-        days = int(request.args.get("days") or kb.TELEM_TREND_DAYS)
-    except (TypeError, ValueError):
-        days = kb.TELEM_TREND_DAYS
-    days = max(1, min(90, days))
-    try:
-        data = KB.telemetry.aggregate(days=days)
-    except Exception as e:
-        return jsonify({"error": "统计失败：%s" % str(e)[:120]}), 500
-    return jsonify(data)
-
-
-# ── Slice 6：离线 RAGAS-lite 评测（管理员手动触发才花额度） ──────────────────
-@app.route("/api/admin/kb/eval/run", methods=["POST"])
-@require_admin
-def api_admin_kb_eval_run():
-    """启动一次后台评测。已跑→409；无 API Key→400；正常→202 带启动快照。"""
-    try:
-        info = kb_eval.start(KB, DATA_DIR)
-    except RuntimeError as e:
-        msg = str(e)
-        if "正在" in msg or "running" in msg.lower():
-            return jsonify({"error": msg, "state": kb_eval.get_state()}), 409
-        if "DASHSCOPE_API_KEY" in msg or "未配置" in msg:
-            return jsonify({"error": msg}), 400
-        return jsonify({"error": msg}), 400
-    except FileNotFoundError as e:
-        return jsonify({"error": "评测题集缺失：%s" % str(e)[:120]}), 500
-    return jsonify(info), 202
-
-
-@app.route("/api/admin/kb/eval/status", methods=["GET"])
-@require_admin
-def api_admin_kb_eval_status():
-    """轮询用：返回当前进度与最近一次已完成结果的摘要。"""
-    return jsonify(kb_eval.get_state())
-
-
-@app.route("/api/admin/kb/eval/results", methods=["GET"])
-@require_admin
-def api_admin_kb_eval_results():
-    """评测历史：滚动上限由 config.EVAL_MAX_RESULTS 控制；支持 ?limit=N 只取最近几条。"""
-    try:
-        limit = int(request.args.get("limit") or kb_eval.config.EVAL_MAX_RESULTS)
-    except (TypeError, ValueError):
-        limit = kb_eval.config.EVAL_MAX_RESULTS
-    limit = max(1, min(kb_eval.config.EVAL_MAX_RESULTS, limit))
-    try:
-        history = kb_eval.EvalStore(DATA_DIR).load()
-    except Exception as e:
-        return jsonify({"error": "读取评测历史失败：%s" % str(e)[:120]}), 500
-    return jsonify({
-        "metrics": list(kb_eval.config.EVAL_METRICS),
-        "labels": kb_eval.METRIC_LABELS,
-        "history": history[-limit:],
-    })
 
 
 # ── PRD 生成器（对齐老板新方向：AI 智能体平台转型售前工具） ──────────────────
@@ -1005,41 +694,6 @@ def api_admin_demo_bookings():
     """后台预约列表（新→旧），供管理端「预约」页签查看。"""
     return jsonify(list(reversed(load_json(DEMO_BOOKINGS_FILE, []))))
 
-
-
-@app.route("/api/admin/links", methods=["GET", "POST"])
-@require_admin
-def api_admin_links():
-    if request.method == "GET":
-        return jsonify(KB.list_links())
-    payload = request.get_json(force=True, silent=True) or {}
-    try:
-        links = KB.save_link(payload)
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
-    return jsonify(links)
-
-
-@app.route("/api/admin/links/<link_id>", methods=["DELETE"])
-@require_admin
-def api_admin_links_delete(link_id):
-    return jsonify(KB.delete_link(link_id))
-
-
-@app.route("/api/admin/links/<link_id>/crawl", methods=["POST"])
-@require_admin
-def api_admin_links_crawl(link_id):
-    """从友情链接一键采集入库。"""
-    link = next((l for l in KB.list_links() if l["id"] == link_id), None)
-    if not link:
-        return jsonify({"error": "链接不存在"}), 404
-    try:
-        doc = _crawl_to_kb(link["url"], doc_type="link")
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": "采集失败：%s" % str(e)[:160]}), 502
-    return jsonify({"doc": doc, "message": "「%s」采集成功，已入库" % link["name"]})
 
 
 # 静态文件服务（处理 SPA 路由）
