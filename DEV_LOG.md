@@ -1246,3 +1246,31 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **已知限制 / 后续建议**：
 - app.py 仍有 ~1000 行，下一步可按"配置/鉴权/知识库/智能体/杂项"继续拆 Blueprint，但收益递减，先做功能切片。
 - SPA 兜底路由会把"不存在的 /api 路径"也回 200 HTML——排障时看状态码会误判，要看响应体（本次验证脚本已按形状断言）。
+
+## 三十七、A4.5 know-how 入库飞轮 + R4 后端拆分收尾 + README（2026-09-27）
+
+**背景**：A4 攒下的方案会话要变成资产（老板的 know-how 沉淀诉求）；用户审代码提出两个质疑——app.py 千行像屎山、根目录文件乱。量化盘点（按域行数：kb 476 行占 45%）后定 R4 方案，用户批准"开拆"。
+
+**A4.5 入库飞轮**：
+- `POST /api/admin/prd-sessions/<sid>/ingest`（prd_sessions.py 内，require_admin）：取会话最新版方案，加来源标注（版本数/取哪版/指回分享页 url），`KB.add_text(doc_type="session", status="pending")` 进知识库待审——管理员入库 → 老板在「知识库」页签批准 → 知识管家可引用，**人工把关两道**。
+- 幂等：会话落 `ingested={doc_id, ts}` 标记，重复入库 409 带原 doc_id，不产生重复文档。
+- 前端 AdminSessions：每行「入库知识库」按钮 → 成功后变「已入库」徽标 + 提示去知识库页签批准；摘要列表加 `ingested` 字段。
+- 知识库未装配（init 未传 kb）返回 503，测试打桩 FakeKB 验证调用契约。
+
+**R4 拆分（公共 API 零变化）**：
+- 新建 `kb_admin.py`：知识库管理域整体迁出（22 条路由 = 16 admin + 2 公开 stats/links + 3 友链 + eval），Blueprint + 依赖注入同 prd_sessions 模式；admin 路由用 `_ADMIN_ROUTES` 表在 init() 统一挂 require_admin 注册，省掉 15 处装饰器样板。app.py **1057 → 712 行**，路由 47 → 25。
+- 消灭 `kb.py` 兼容层：app.py 直接 `from rag.store import KnowledgeStore` 等直连 rag 包，kb.* 引用归零。
+- `clean_choice`（原 _clean_choice）与 `ALLOWED_KB_EXTS/MAX_KB_SIZE` 收口 kb_admin.py，app.py 反向 import（方向仍单向：app → kb_admin）。
+- 根目录归整：5 个 SPEC + 2 份报告 + start.sh/watchdog.sh（Docker 化前的裸机遗物）→ `docs/archive/`；根目录只剩 DEV_LOG.md + 代码 + 配置。.gitignore 补 data/demo_bookings.json、data/prd_sessions.json（本机测试残留差点入库）。
+
+**README**：按高星项目惯例新写——slogan/功能特性（门户/多智能体/管理后台三块）/技术栈表/项目结构树（含模块约定：依赖单向、init 注入、新域照抄 prd_sessions 模式）/快速开始/测试/Docker 部署/环境变量表/API 概览。
+
+**测试结果**：全量 261 断言绿（test_prd_sessions 31→42，新增入库域 11 断言：503/401/404/200 契约/pending/正文取 v2/来源标注/409 幂等/摘要标记）；build 过（index-D6z4ayeQ.js）。
+
+**改动文件**：kb_admin.py（新）、prd_sessions.py（+ingest）、app.py（拆出）、kb.py（删）、src/AdminSessions.jsx、tests/test_prd_sessions.py、Dockerfile、.gitignore、README.md（新）、docs/archive/（8 文件迁入）。
+
+**坑与教训**：
+1. mv/sed 前先核对真实文件名（"批次1"不是"批阅1"、"检索式"不是"检索与"），sed 锚点 `./` 要转义。
+2. 本地测试文件 redirect 了路径，但更早轮次的残留（data/demo_bookings.json）还在裸奔——gitignore 覆盖所有运行时数据文件，git add -A 前必看 status。
+
+**已知限制 / 后续建议**：app.py 仍 712 行（配置/鉴权/项目/预约/智能体/SPA），再拆收益递减；A5-MCP 桥（把 agents 暴露为 MCP server）待议。
