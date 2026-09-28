@@ -16,6 +16,7 @@ from flask import Blueprint, request, jsonify
 import agents
 import agents_api
 import qa
+from core import rate_limited
 
 bp = Blueprint("mcp_endpoint", __name__)
 
@@ -173,7 +174,6 @@ def mcp_post():
             return _rpc_error(id_, JSONRPC_METHOD_NOT_FOUND, "未知工具：%s" % name)
         limit = _TOOL_LIMITS.get(name)
         if limit:
-            from core import rate_limited
             if rate_limited(request.remote_addr, limit=limit[0], window=limit[1],
                             bucket="mcp_tool_%s" % name):
                 return _rpc_error(id_, JSONRPC_INVALID_PARAMS,

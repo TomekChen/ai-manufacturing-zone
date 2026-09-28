@@ -10,14 +10,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# 前端依赖与源码（镜像里只需要 dist/ 构建产物）
+# 前端（镜像里只需要 dist/ 构建产物）
 node_modules/
-src/
-index.html
-vite.config.js
-package.json
-package-lock.json
-pnpm-workspace.yaml
+frontend/
 
 # 运行时数据（compose 挂载 ./data，勿烘进镜像）
 data/

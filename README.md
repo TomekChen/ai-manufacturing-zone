@@ -53,7 +53,8 @@
 ├── agents/              # 多智能体包：registry（注册表）/ runtime（依赖注入）/ planner / 各智能体
 ├── rag/                 # 知识库引擎：store（存储）/ engine（WeKnora 桥）/ intents / chunkers /
 │                        #   retrievers / embedding / llm / evaluate（离线评测）/ telemetry
-├── src/                 # React 前端（api.js 统一请求封装 + 各页面组件）
+├── frontend/            # React 前端（Vite 工程：src 组件 + index.html + package.json，
+│                        #   build 产物输出到根 dist/ 供后端托管）
 ├── tests/               # 离线自组织断言测试（12 个文件，310+ 断言，不依赖外部服务）
 ├── docs/archive/        # 历史设计文档与报告归档（增量真相来源见 DEV_LOG.md）
 ├── DEV_LOG.md           # 开发日志：每个切片的背景/设计/测试/坑——唯一增量真相来源
@@ -75,9 +76,10 @@ cp .env.example .env                              # 填 DASHSCOPE_API_KEY 才有
 python app.py                                     # http://127.0.0.1:8804（指向 dist/，需先构建前端）
 
 # 前端
+cd frontend
 npm install
 npm run dev                                       # Vite 开发服务器
-npm run build                                     # 产出 dist/ 供后端托管
+npm run build                                     # 产出根目录 dist/ 供后端托管
 ```
 
 默认管理员账号 `admin / admin123`——生产环境**务必**通过环境变量覆盖。

@@ -20,36 +20,43 @@ from core import (CONFIG_FILE, PROJECTS_FILE, DEFAULT_CONFIG,
 bp = Blueprint("portal", __name__)
 
 
+def _request_probe(url, method, timeout=15):
+    """发一次探测请求，返回 (ok, status, err)。
+
+    ok=服务可用（非 5xx 响应，或 SSL 证书告警但可达）；
+    status=HTTP 状态码（无响应时为 None）；err=失败/告警归类的短标记。
+    调用方各自决定策略差异：check_alive 对 5xx 换方法重试，probe_url 立即返回。
+    """
+    try:
+        r = requests.request(
+            method, url,
+            timeout=(5, timeout),  # (connect, read)
+            headers={"User-Agent": "Heartbeat/1.0"},
+            verify=False,
+            allow_redirects=True,
+        )
+        return r.status_code < 500, r.status_code, None
+    except requests.exceptions.SSLError:
+        # SSL 证书问题但服务在运行
+        return True, None, "ssl"
+    except requests.exceptions.ConnectionError:
+        return False, None, "conn"
+    except requests.exceptions.Timeout:
+        return False, None, "timeout"
+    except Exception as e:
+        return False, None, str(e)[:160]
+
+
 def check_alive(url, timeout=15):
     """宽松心跳检测：服务只要能建立连接并返回非 5xx 状态即视为在线。"""
     if not url:
         return False
-
-    def try_request(method):
-        try:
-            r = requests.request(
-                method, url,
-                timeout=(5, timeout),  # (connect, read)
-                headers={"User-Agent": "Heartbeat/1.0"},
-                verify=False,
-                allow_redirects=True,
-            )
-            # 2xx/3xx/4xx 都表示服务在运行；5xx 表示服务异常
-            return r.status_code < 500
-        except requests.exceptions.SSLError:
-            # SSL 证书问题但服务在运行
-            return True
-        except requests.exceptions.ConnectionError:
-            return False
-        except requests.exceptions.Timeout:
-            return False
-        except Exception:
-            return False
-
     # 先尝试 HEAD（轻量），失败再回退 GET
-    if try_request("HEAD"):
-        return True
-    return try_request("GET")
+    for method in ("HEAD", "GET"):
+        ok, _status, _err = _request_probe(url, method, timeout)
+        if ok:
+            return True
+    return False
 
 
 def heartbeat_all():
@@ -88,28 +95,21 @@ def probe_url(url, timeout=15):
         return {"alive": False, "status": None, "error": "地址为空"}
     last_err = None
     for method in ("HEAD", "GET"):
-        try:
-            r = requests.request(
-                method, url,
-                timeout=(5, timeout),
-                headers={"User-Agent": "Heartbeat/1.0"},
-                verify=False,
-                allow_redirects=True,
-            )
-            alive = r.status_code < 500
-            return {
-                "alive": alive,
-                "status": r.status_code,
-                "error": None if alive else f"服务返回 {r.status_code}（5xx 视为异常）",
-            }
-        except requests.exceptions.SSLError:
-            return {"alive": True, "status": None, "error": "SSL 证书告警，但服务可达"}
-        except requests.exceptions.ConnectionError:
+        ok, status, err = _request_probe(url, method, timeout)
+        if ok:
+            if err == "ssl":
+                return {"alive": True, "status": None, "error": "SSL 证书告警，但服务可达"}
+            return {"alive": True, "status": status, "error": None}
+        if status is not None:
+            # 拿到了响应但 5xx：服务在运行且异常，换方法也无意义，立即返回
+            return {"alive": False, "status": status,
+                    "error": "服务返回 %d（5xx 视为异常）" % status}
+        if err == "conn":
             last_err = "无法建立连接（地址不可达 / 端口未监听 / 服务器无法回环访问本机公网地址）"
-        except requests.exceptions.Timeout:
+        elif err == "timeout":
             last_err = "连接超时（服务器在该地址上无响应）"
-        except Exception as e:
-            last_err = str(e)[:160]
+        else:
+            last_err = err
     return {"alive": False, "status": None, "error": last_err or "未知错误"}
 
 
