@@ -1334,3 +1334,23 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **坑与教训**：Flask Blueprint 的 catch-all `/<path:path>` 与具体路由的匹配优先级由 Werkzeug 按特异性排序，与注册顺序无关——SPA 兜底路由搬进 webapp.py 不影响 /api/* 匹配（292 断言实证）。
 
 **改动文件**：app.py（重写）、core/portal/qa/agents_api/webapp/kb_weknora.py（新）、kb_admin.py（拆出 WeKnora 块）、tests/test_booking.py（patch 目标）、Dockerfile（COPY 清单 +6）、README（项目结构树）。
+
+## 四十一、A6 MCP 远程模式：服务端 /mcp 直出无状态 Streamable HTTP，客户端零安装直连（2026-09-28）
+
+**背景**：A5 的 stdio 桥要客户端本机装 mcp 包 + 配 command，门槛高。A6 把智能体工具直接挂在门户上：任何支持 MCP 远程 URL 的客户端（Claude Desktop / Cursor / Qoder 等）填 `http://47.115.223.159:8804/mcp` 即可用，服务端零新增依赖（手写 JSON-RPC，不引 mcp 包）。
+
+**实现**（mcp_endpoint.py，约 200 行，Blueprint + 装配区注册，同 R5 模式）：
+- 无状态 Streamable HTTP：只实现 POST /mcp（GET/DELETE → 405），不要求 Mcp-Session-Id，notifications → 202 空；工具实现直接调内部函数（qa.kb_ask_core、agents.list_agents、agents_api._run_agent），不走 HTTP 回环、不与公开端点共享限流桶。
+- 4 个工具与 A5 桥同名同参：list_agents（不限）/ ask_knowledge_base（10 次/分）/ generate_prd_proposal、dispatch_task（各 5 次/时），桶名 `mcp_tool_<name>`。
+- 工具执行失败返回 `isError=true` 的 result（业务错误不污染协议层）；协议错误才用 JSON-RPC 错误码（-32700/-32601/-32602）。
+
+**测试**：tests/test_mcp_endpoint.py 22 断言（initialize 协议版本回退、notifications、tools/list、tools/call 四工具、协议错误、限流 429）；全量回归 12 套件 314 断言全绿。
+
+**坑与教训**：
+1. initialize 不能无脑回显客户端的 protocolVersion——客户端发 "2099-01-01" 时必须回自己支持的版本（支持集 {2024-11-05, 2025-03-26, 2025-06-18}，不在集内回退 2025-03-26）。
+2. Flask 返回值双重元组 500：`_rpc_error(...)` 已返回 (Response, status)，外面再 `, 429` 就成了 ((Response,200),429) → 500。状态码要么在 helper 里给，要么拆开写。
+3. 远程 E2E 脚本两次踩自家坑：未知工具按协议应抛 McpError（客户端库转异常），断言要 try/except；工具返回刻意不带 status 字段（list_agents 只出 id/name/role/desc/caps/endpoint），断言别按网页 API 形状猜。
+
+**部署与验证**：备份 data-preA6-20260928222938 → 上传 mcp_endpoint.py + app.py（MD5 两端核对一致）→ 服务器 Dockerfile COPY 清单加 mcp_endpoint.py（这次只动 app.py 那一行，没再踩 R5 双 COPY 行的坑）→ compose up -d --build。线上冒烟：/api/kb/stats 200、POST /mcp initialize 正常、GET /mcp 405。远程 E2E（本机 .venv 标准 MCP 客户端 → 线上 /mcp）8/8：initialize、4 tools、list_agents 实数据、业务错误 isError、未知工具 -32601。
+
+**改动文件**：mcp_endpoint.py（新）、app.py（注册 + 注释）、tests/test_mcp_endpoint.py（新）、Dockerfile（COPY +1）、README（MCP 接入节改为远程/stdio 双方式）、DEV_LOG.md。commit 4d34601。
