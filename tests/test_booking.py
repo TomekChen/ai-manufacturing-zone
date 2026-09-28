@@ -23,10 +23,11 @@ if "bs4" in sys.modules and not hasattr(sys.modules["bs4"], "BeautifulSoup"):
     sys.modules["bs4"].BeautifulSoup = object
 
 import app  # noqa: E402
+import webapp  # noqa: E402  R5 起预约路由在 webapp 域，落盘路径 patch 到这里
 
 # 预约文件重定向到临时目录，不污染本地 data/
 _TMP = tempfile.mkdtemp(prefix="booking_test_")
-app.DEMO_BOOKINGS_FILE = os.path.join(_TMP, "demo_bookings.json")
+webapp.DEMO_BOOKINGS_FILE = os.path.join(_TMP, "demo_bookings.json")
 
 # 邮件打桩：永不真发。SEND_OK 控制成功/失败分支。
 SENT = []
@@ -59,7 +60,7 @@ def clear_booking_bucket():
 
 
 def read_file():
-    return app.load_json(app.DEMO_BOOKINGS_FILE, [])
+    return app.load_json(webapp.DEMO_BOOKINGS_FILE, [])
 
 
 TOKEN = app.hash_password(app.ADMIN_ACCOUNT + app.ADMIN_PASSWORD + app.SECRET_KEY)[:32]

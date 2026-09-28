@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 # 后端源码：app.py + kb.py 兼容层 + rag/ 包（含离线评测题集）+ agents/ 智能体包 + notify.py 邮件 + prd_sessions.py 会话账本
-COPY app.py notify.py prd_sessions.py kb_admin.py ./
+COPY app.py core.py portal.py qa.py agents_api.py webapp.py notify.py prd_sessions.py kb_admin.py kb_weknora.py ./
 COPY rag/ ./rag/
 COPY agents/ ./agents/
 

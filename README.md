@@ -38,9 +38,16 @@
 ## 项目结构
 
 ```
-├── app.py               # Flask 装配入口：配置/鉴权/项目管理/预约/智能体端点 + SPA 服务
-├── kb_admin.py          # 知识库管理域：文档审核/采集/重建、WeKnora 转发、遥测看板、评测、友链
+├── app.py               # Flask 装配入口：创建 app/知识库，注入依赖并注册各域蓝图（约 70 行）
+├── core.py              # 共享基础设施：路径/凭据/JSON 读写/鉴权/限流（无路由）
+├── portal.py            # 门户展示域：外观配置/项目卡 CRUD/探活心跳
+├── qa.py                # 门户问答域：公开上传/WeKnora 会话映射/问答内核/ask/feedback
+├── agents_api.py        # 智能体门面：注册表/派发/直跑/后台 PRD 生成
+├── webapp.py            # 站点服务域：管理员登录/图片上传/预约演示/SPA 静态
+├── kb_admin.py          # 知识库管理域：文档审核/采集/重建、遥测看板、评测、友链
+├── kb_weknora.py        # WeKnora 引擎转发域（引擎开启时管理端点）
 ├── prd_sessions.py      # 售前方案会话账本：生成即存档/版本回放/只读分享/一键入库
+├── mcp_bridge.py        # MCP 桥（客户端本机运行）：智能体暴露为标准 MCP 工具
 ├── notify.py            # 邮件通知（预约演示）
 ├── agents/              # 多智能体包：registry（注册表）/ runtime（依赖注入）/ planner / 各智能体
 ├── rag/                 # 知识库引擎：store（存储）/ engine（WeKnora 桥）/ intents / chunkers /

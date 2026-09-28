@@ -1313,3 +1313,24 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 3. Windows GBK 终端打 emoji/中文必乱码：冒烟脚本统一 `PYTHONIOENCODING=utf-8` 或 ASCII 化输出。
 
 **改动文件**：mcp_bridge.py（新）、tests/test_mcp_bridge.py（新）、README.md（MCP 接入节）、DEV_LOG.md。服务端零改动，无需部署。
+
+## 四十、R5 后端再拆分：app.py 711 → 66 行纯装配区，最大文件 294 行（2026-09-28）
+
+**背景**：用户不想再看到几百行的后端文件。R4 后 app.py 仍有 712 行（配置/鉴权/项目/问答/智能体/预约/SPA 全在一起），kb_admin.py 381 行。按既定 Blueprint+依赖注入模式再拆一轮，HTTP 路由与数据形状零变化。
+
+**拆分结果**（一个文件一个变更理由，全部不 import app）：
+- `core.py`（117）：共享基础设施——路径/凭据/DEFAULT_CONFIG/JSON 读写/getters/hash_password/verify_token/require_admin/_ask_limits/rate_limited/limiter。无路由。顺手删了死常量 MAX_UPLOAD_SIZE（定义后从未使用）。
+- `portal.py`（213）：门户展示域——外观 config ×3、项目卡 CRUD ×3、探活心跳（check_alive/heartbeat_all/loop，线程启动收进 start_heartbeat() 由装配区显式调用）、probe。
+- `qa.py`（195）：门户问答域——公开 kb/upload、WeKnora 会话映射、_ask_weknora、kb_ask_core、ask、feedback。init(kb) 注入知识库；kb_ask_core 仍由装配区注入 agents.runtime。
+- `agents_api.py`（121）：智能体门面——admin prd/generate、agents ×4、_run_agent。init(kb)。
+- `webapp.py`（101）：站点服务——login、图片上传/uploads、预约 ×2、SPA 静态。**不叫 site.py**（遮蔽标准库）。
+- `kb_weknora.py`（107）：自 kb_admin 拆出 WeKnora 引擎转发 6 端点（独立变更理由：引擎对接），init(require_admin) 自挂 admin 注册。
+- `app.py`（66）：纯装配区——创建 Flask app 与 KB、agents.runtime 注入（store/kb_ask）、各域 init+注册（一个 for 循环）、`__main__`。拆分前的模块属性通过 import 转出（公共 API 冻结）：`app._ask_limits`（同一对象）、app.hash_password、app.ADMIN_*、app.kb_prd、app.notify 等测试引用点零改动。
+
+**测试兼容性处理**：唯一需要改的测试是 test_booking.py 的 `app.DEMO_BOOKINGS_FILE` → `webapp.DEMO_BOOKINGS_FILE`（patch 目标跟着实现走，断言零变化）。app.kb_prd/app.notify 的打桩是打在共享模块对象上，搬家无碍。
+
+**验证**：全量 292 断言绿（11 套件）；路由总数 53 与拆分前一致；最大文件 kb_admin.py 294 行。文件清单：app 66 / core 117 / portal 213 / qa 195 / agents_api 121 / webapp 101 / kb_admin 294 / kb_weknora 107 / prd_sessions 283 / mcp_bridge 148 / notify 54。
+
+**坑与教训**：Flask Blueprint 的 catch-all `/<path:path>` 与具体路由的匹配优先级由 Werkzeug 按特异性排序，与注册顺序无关——SPA 兜底路由搬进 webapp.py 不影响 /api/* 匹配（292 断言实证）。
+
+**改动文件**：app.py（重写）、core/portal/qa/agents_api/webapp/kb_weknora.py（新）、kb_admin.py（拆出 WeKnora 块）、tests/test_booking.py（patch 目标）、Dockerfile（COPY 清单 +6）、README（项目结构树）。

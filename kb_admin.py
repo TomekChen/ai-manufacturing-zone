@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""知识库管理域（R4 自 app.py 拆出）：文档审核/采集/重建、WeKnora 引擎转发、
-问答遥测看板、离线评测、友情链接。
+"""知识库管理域（R4 自 app.py 拆出）：文档审核/采集/重建、问答遥测看板、
+离线评测、友情链接。WeKnora 引擎转发在 kb_weknora.py（R5 拆出）。
 
 Blueprint + 依赖注入（同 prd_sessions 模式）：本模块不 import app，app.py 装配时
 调用 init(kb, require_admin_dec, data_dir) 注入共享设施后 register_blueprint。
@@ -190,87 +190,6 @@ def _admin_kb_rebuild_doc(doc_id):
     })
 
 
-# ── WeKnora 引擎转发（W2）：管理界面在引擎开启时改走这组端点 ────────────────
-# SPEC：所有 WeKnora 调用收口在 rag/engine.py；WEKNORA_ENABLED=false 时前端
-# 自动回退旧界面（下方旧端点原样保留，就是回滚网本身）。
-
-def _admin_kb_weknora_status():
-    """引擎概览：是否启用/是否已配置/健康检查。"""
-    st = wk_engine.status()
-    st["healthy"] = wk_engine.health() if st["configured"] else None
-    return jsonify(st)
-
-
-def _admin_kb_weknora_docs():
-    """WeKnora 文档列表（含解析状态）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        return jsonify(wk_engine.list_docs())
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-
-
-def _admin_kb_weknora_upload():
-    """上传文档到 WeKnora（解析异步，前端轮询刷新状态）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    file = request.files.get("file")
-    if not file or not file.filename:
-        return jsonify({"error": "没有收到文件"}), 400
-    ext = file.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_KB_EXTS:
-        return jsonify({"error": "仅支持 TXT / Markdown / PDF 文件"}), 400
-    blob = file.read()
-    if len(blob) > MAX_KB_SIZE:
-        return jsonify({"error": "文件超过 10MB 限制"}), 400
-    if len(blob) == 0:
-        return jsonify({"error": "文件内容为空"}), 400
-    try:
-        doc_id = wk_engine.upload_file(file.filename, blob)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"id": doc_id, "parse_status": "pending",
-                    "message": "已提交 WeKnora 解析，稍后自动刷新状态"})
-
-
-def _admin_kb_weknora_doc(kid):
-    """单文档：解析状态 + 分块预览。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        detail = wk_engine.doc_detail(kid)
-        chunks = wk_engine.doc_chunks(kid)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"doc": detail, "chunks": chunks})
-
-
-def _admin_kb_weknora_delete(kid):
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    try:
-        wk_engine.delete_doc(kid)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"ok": True})
-
-
-def _admin_kb_weknora_search():
-    """检索调试：直查 WeKnora knowledge-search（分数尺度与问答链路不可混比）。"""
-    if not wk_engine.is_enabled():
-        return jsonify({"error": "WeKnora 引擎未启用"}), 409
-    payload = request.get_json(force=True, silent=True) or {}
-    q = (payload.get("query") or "").strip()
-    if not q:
-        return jsonify({"error": "请输入检索词"}), 400
-    try:
-        hits = wk_engine.search(q, top_k=8)
-    except wk_engine.EngineError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"hits": hits})
-
-
 # ── 遥测看板 / 离线评测 ─────────────────────────────────────────────────────
 def _admin_kb_analytics():
     """问答看板聚合（Slice 4）：总量/拒绝率/各策略对比/时间趋势/👍👎/未命中清单。"""
@@ -365,12 +284,6 @@ _ADMIN_ROUTES = [
     ("/api/admin/kb/options", "api_admin_kb_options", _admin_kb_options, ["GET"]),
     ("/api/admin/kb/rebuild", "api_admin_kb_rebuild_all", _admin_kb_rebuild_all, ["POST"]),
     ("/api/admin/kb/docs/<doc_id>/rebuild", "api_admin_kb_rebuild_doc", _admin_kb_rebuild_doc, ["POST"]),
-    ("/api/admin/kb/weknora/status", "api_admin_kb_weknora_status", _admin_kb_weknora_status, ["GET"]),
-    ("/api/admin/kb/weknora/docs", "api_admin_kb_weknora_docs", _admin_kb_weknora_docs, ["GET"]),
-    ("/api/admin/kb/weknora/upload", "api_admin_kb_weknora_upload", _admin_kb_weknora_upload, ["POST"]),
-    ("/api/admin/kb/weknora/docs/<kid>", "api_admin_kb_weknora_doc", _admin_kb_weknora_doc, ["GET"]),
-    ("/api/admin/kb/weknora/docs/<kid>", "api_admin_kb_weknora_delete", _admin_kb_weknora_delete, ["DELETE"]),
-    ("/api/admin/kb/weknora/search", "api_admin_kb_weknora_search", _admin_kb_weknora_search, ["POST"]),
     ("/api/admin/kb/analytics", "api_admin_kb_analytics", _admin_kb_analytics, ["GET"]),
     ("/api/admin/kb/eval/run", "api_admin_kb_eval_run", _admin_kb_eval_run, ["POST"]),
     ("/api/admin/kb/eval/status", "api_admin_kb_eval_status", _admin_kb_eval_status, ["GET"]),
