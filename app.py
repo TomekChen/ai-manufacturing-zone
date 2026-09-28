@@ -15,6 +15,7 @@ R5 起 app.py 只做三件事：
   kb_admin.py   知识库管理（文档审核/采集/重建/遥测/评测/友链）
   kb_weknora.py WeKnora 引擎转发
   prd_sessions.py 方案会话账本（存档/回放/分享/入库飞轮）
+  mcp_endpoint.py MCP 远程端点（Streamable HTTP /mcp）
 """
 import os
 
@@ -29,6 +30,7 @@ import qa
 import agents_api
 import webapp
 import prd_sessions
+import mcp_endpoint
 
 # 供测试/运维引用的兼容转出口（app.<name> 与拆分前同一对象）
 from core import (DATA_DIR, PROJECTS_FILE, ADMIN_ACCOUNT, ADMIN_PASSWORD,  # noqa: F401
@@ -57,7 +59,8 @@ prd_sessions.init(DATA_DIR, load_json, save_json, rate_limited, require_admin, K
 kb_admin.init(KB, require_admin, DATA_DIR)
 kb_weknora.init(require_admin)
 
-for module in (portal, qa, agents_api, webapp, kb_admin, kb_weknora, prd_sessions):
+for module in (portal, qa, agents_api, webapp, kb_admin, kb_weknora, prd_sessions,
+               mcp_endpoint):
     app.register_blueprint(module.bp)
 
 

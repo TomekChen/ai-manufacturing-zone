@@ -47,13 +47,14 @@
 ├── kb_admin.py          # 知识库管理域：文档审核/采集/重建、遥测看板、评测、友链
 ├── kb_weknora.py        # WeKnora 引擎转发域（引擎开启时管理端点）
 ├── prd_sessions.py      # 售前方案会话账本：生成即存档/版本回放/只读分享/一键入库
-├── mcp_bridge.py        # MCP 桥（客户端本机运行）：智能体暴露为标准 MCP 工具
+├── mcp_bridge.py        # MCP 桥（客户端本机 stdio）：智能体暴露为标准 MCP 工具
+├── mcp_endpoint.py      # MCP 远程端点（服务端 /mcp，Streamable HTTP JSON-RPC）
 ├── notify.py            # 邮件通知（预约演示）
 ├── agents/              # 多智能体包：registry（注册表）/ runtime（依赖注入）/ planner / 各智能体
 ├── rag/                 # 知识库引擎：store（存储）/ engine（WeKnora 桥）/ intents / chunkers /
 │                        #   retrievers / embedding / llm / evaluate（离线评测）/ telemetry
 ├── src/                 # React 前端（api.js 统一请求封装 + 各页面组件）
-├── tests/               # 离线自组织断言测试（10 个文件，260+ 断言，不依赖外部服务）
+├── tests/               # 离线自组织断言测试（12 个文件，310+ 断言，不依赖外部服务）
 ├── docs/archive/        # 历史设计文档与报告归档（增量真相来源见 DEV_LOG.md）
 ├── DEV_LOG.md           # 开发日志：每个切片的背景/设计/测试/坑——唯一增量真相来源
 ├── Dockerfile           # 后端镜像（python:3.12-slim + 编译好的 dist）
@@ -86,12 +87,34 @@ npm run build                                     # 产出 dist/ 供后端托管
 ```bash
 # 全量离线测试（缺 faiss/bs4 时测试文件自带桩，无需额外安装）
 python tests/test_prd_sessions.py    # 单个文件
-for f in tests/test_*.py; do python "$f"; done   # 全部（10 文件，260+ 断言）
+for f in tests/test_*.py; do python "$f"; done   # 全部（12 文件，310+ 断言）
 ```
 
-## MCP 接入（A5）
+## MCP 接入（A5 stdio 桥 / A6 远程端点）
 
-`mcp_bridge.py` 把本平台的智能体暴露为标准 MCP 工具，任何 MCP 客户端（Claude Desktop、Qoder、Cursor 等）无需改造服务端即可调用。桥跑在**客户端本机**（stdio），全部请求走门户公开 API——限流、校验、错误形状与服务端网页体验完全一致。
+平台智能体以标准 MCP 工具对外暴露，两种接法任选：
+
+### 方式一：远程直连（A6，推荐，客户端零安装）
+
+服务端在 `/mcp` 直出无状态 Streamable HTTP（JSON-RPC），外部 MCP 客户端不用装任何东西，直接配 URL：
+
+```json
+{
+  "mcpServers": {
+    "ai-manufacturing-zone": {
+      "url": "http://47.115.223.159:8804/mcp"
+    }
+  }
+}
+```
+
+- 无状态实现：不要求 `Mcp-Session-Id`，initialize 后即可 tools/list、tools/call
+- 工具限流与服务端网页体验同源（`ask_knowledge_base` 10 次/分、PRD/派发 5 次/时，超限返回 429）
+- 协议层兼容 2024-11-05 / 2025-03-26 / 2025-06-18 三个版本，未知版本回退 2025-03-26
+
+### 方式二：本地 stdio 桥（A5）
+
+`mcp_bridge.py` 跑在**客户端本机**（stdio），全部请求走门户公开 API——限流、校验、错误形状与网页一致。适合客户端不支持远程 URL 的场景。
 
 | 工具 | 说明 | 限流 |
 |---|---|---|
@@ -110,7 +133,7 @@ pip install "mcp<2"
 ```json
 {
   "mcpServers": {
-    "ai-manufacturing-zone": {
+    "ai-manufacturing-zone-stdio": {
       "command": "python",
       "args": ["/path/to/mcp_bridge.py"],
       "env": { "PORTAL_BASE_URL": "http://47.115.223.159:8804" }
