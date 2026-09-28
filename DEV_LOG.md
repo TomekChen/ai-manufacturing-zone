@@ -1368,4 +1368,4 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 
 **坑与教训**：仓库里 package-lock.json / pnpm-workspace.yaml 从未入版本控制（npm 兼容产物），git mv 会报 not under version control——迁移前先 `git ls-files` 分清 tracked/untracked。
 
-**⚠️ 部署阻塞**：2026-09-29 晚发现 47.115.223.159 整机不可达（ICMP 100% 丢包、8804 HTTP 超时，本机外网正常）——20 分钟前 A6 部署时还通。portal.py/mcp_endpoint.py/rag/registry.py 三个文件的更新待服务器恢复后部署（tarball 已备 /tmp/tidy.tgz 本地）。需在阿里云控制台排查：实例状态/欠费/安全组/IP 变更。
+**部署已完成（2026-09-29 深夜）**：失联原因= ECS 实例重启（up 1 min，容器 compose 自启策略生效、数据卷无损，非本项目代码问题）。服务器恢复后上传三文件（MD5 两端核对一致）+ compose 重建；冒烟：外网 stats/index 200、/mcp tools/list 正常、容器日志无 error/traceback、远程 MCP E2E 8/8。
