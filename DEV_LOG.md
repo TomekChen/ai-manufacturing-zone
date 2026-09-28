@@ -1354,3 +1354,18 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **部署与验证**：备份 data-preA6-20260928222938 → 上传 mcp_endpoint.py + app.py（MD5 两端核对一致）→ 服务器 Dockerfile COPY 清单加 mcp_endpoint.py（这次只动 app.py 那一行，没再踩 R5 双 COPY 行的坑）→ compose up -d --build。线上冒烟：/api/kb/stats 200、POST /mcp initialize 正常、GET /mcp 405。远程 E2E（本机 .venv 标准 MCP 客户端 → 线上 /mcp）8/8：initialize、4 tools、list_agents 实数据、业务错误 isError、未知工具 -32601。
 
 **改动文件**：mcp_endpoint.py（新）、app.py（注册 + 注释）、tests/test_mcp_endpoint.py（新）、Dockerfile（COPY +1）、README（MCP 接入节改为远程/stdio 双方式）、DEV_LOG.md。commit 4d34601。
+
+## 四十二、设计模式审计 + 仓库布局整理：前端迁入 frontend/、portal 探测去重（2026-09-29）
+
+**背景**：用户要求按 design-patterns skill 逐项审计后端是否符合设计模式、不许有屎山；并指出根目录前后端混居"乱"。审计结论：8 项判定全符合（装配区+依赖注入替代单例、Decorator 收敛鉴权/限流、Strategy+Registry 三注册表、AgentBase 模板方法、注册表+planner 路由、kb_ask_core 门面、WeKnora/MCP 适配器、无过度设计），唯一坏味道是 portal.py 两份 ~45 行探测样板。
+
+**改动**：
+- portal.py 213→189 行：提取 `_request_probe(url, method, timeout)` 返回 (ok, status, err)，check_alive（5xx 换方法重试）与 probe_url（5xx 立即返回）各自保留策略差异——公共行为不变，差异不上提到 helper。
+- 前端迁入 frontend/（git mv 保历史）：index.html/vite.config.js/package.json/src 全进 frontend/；vite outDir 改 `../dist` 保持 Dockerfile COPY dist/ 与服务器部署路径零变化；.dockerignore 改排除 frontend/；README 结构树与构建命令同步。根 node_modules（46MB 旧布局遗留）已删。
+- 杂项：mcp_endpoint.py 函数内 import 提顶；rag/registry.py 头部误挂的 DEPRECATED 回退网标记删除（Registry 是活跃基础设施，标记误导审码）。
+
+**验证**：前端 frontend/ 下 npm install + build 成功（产物 ../dist）；Python 全量回归 12 套件 314 断言全绿。commit 3b966f6 已推送。
+
+**坑与教训**：仓库里 package-lock.json / pnpm-workspace.yaml 从未入版本控制（npm 兼容产物），git mv 会报 not under version control——迁移前先 `git ls-files` 分清 tracked/untracked。
+
+**⚠️ 部署阻塞**：2026-09-29 晚发现 47.115.223.159 整机不可达（ICMP 100% 丢包、8804 HTTP 超时，本机外网正常）——20 分钟前 A6 部署时还通。portal.py/mcp_endpoint.py/rag/registry.py 三个文件的更新待服务器恢复后部署（tarball 已备 /tmp/tidy.tgz 本地）。需在阿里云控制台排查：实例状态/欠费/安全组/IP 变更。
