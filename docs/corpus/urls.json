@@ -1,0 +1,12 @@
+[
+  {"group": "国家政策", "url": "https://www.gov.cn/zhengce/zhengceku/2021-12/28/content_5664996.htm", "title": "十四五智能制造发展规划（八部门）"},
+  {"group": "国家政策", "url": "https://www.gov.cn/zhengce/zhengceku/2021-12/09/content_5659548.htm", "title": "国家智能制造标准体系建设指南（2021版）"},
+  {"group": "国家政策", "url": "http://www.gov.cn/zhengce/content/2017-07/20/content_5211996.htm", "title": "新一代人工智能发展规划（国务院）"},
+  {"group": "国家政策", "url": "https://www.gov.cn/zhengce/2023-02/27/content_5743484.htm", "title": "数字中国建设整体布局规划"},
+  {"group": "国家政策", "url": "https://www.gov.cn/zhengce/content/2022-01/12/content_5667817.htm", "title": "十四五数字经济发展规划"},
+  {"group": "国家政策", "url": "https://www.gov.cn/zhengce/zhengceku/2021-01/13/content_5579519.htm", "title": "工业互联网创新发展行动计划（2021-2023年）"},
+  {"group": "省级政策", "url": "https://hunan.gov.cn/zqt/zcsd/202601/t20260108_33888603.html", "title": "人工智能+制造专项行动实施意见（八部门，湖南全文）"},
+  {"group": "部委通知", "url": "https://yn.mof.gov.cn/tongzhitonggao/202308/t20230801_3899673.htm", "title": "中小企业数字化转型城市试点工作通知"},
+  {"group": "开源文档", "url": "https://github.com/Tencent/WeKnora", "title": "WeKnora 开源知识库引擎（Apache-2.0）"},
+  {"group": "开源文档", "url": "https://docs.dify.ai/zh-hans", "title": "Dify 开源 LLM 应用平台文档（Apache-2.0）"}
+]

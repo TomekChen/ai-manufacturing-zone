@@ -1369,3 +1369,19 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **坑与教训**：仓库里 package-lock.json / pnpm-workspace.yaml 从未入版本控制（npm 兼容产物），git mv 会报 not under version control——迁移前先 `git ls-files` 分清 tracked/untracked。
 
 **部署已完成（2026-09-29 深夜）**：失联原因= ECS 实例重启（up 1 min，容器 compose 自启策略生效、数据卷无损，非本项目代码问题）。服务器恢复后上传三文件（MD5 两端核对一致）+ compose 重建；冒烟：外网 stats/index 200、/mcp tools/list 正常、容器日志无 error/traceback、远程 MCP E2E 8/8。
+
+## 四十三、知识库开源语料扩充：政策/开源文档批量采集 10 篇进 WeKnora（2026-09-30）
+
+**背景**：老板反馈"知识库可以换成优质开源的知识库"。澄清两层含义：引擎层已是开源 WeKnora（可演示）；语料层原为 7 篇知网论文（版权合规风险 + 学术偏重）。按「可商用合规等级」制定语料清单（政府公文/开源软件文档/CC 内容三梯队），第一批自动采集 10 篇。
+
+**清单与合规**（docs/corpus/urls.json，本地 curl 逐条验活）：国家政策 6 篇（十四五智能制造发展规划、智能制造标准体系指南、新一代 AI 规划、数字中国规划、数字经济规划、工业互联网行动计划，均 gov.cn 公文，著作权法第五条豁免）+ 省级 1（AI+制造专项行动实施意见湖南全文）+ 部委通知 1（中小企业数字化转型城市试点）+ 开源文档 2（WeKnora GitHub、Dify docs，Apache-2.0）。死链淘汰 4 条（含 gov.cn 2016 旧规划 404、nda.gov.cn 不可达、RAGFlow docs 是 JS-SPA 空壳）。国标全文明确不入库（在线阅览≠授权复制）；知网论文维持现状待降级内部参考。
+
+**实现**（docs/corpus/ingest.py）：容器内跑，调 http://127.0.0.1:8804/api/admin/kb/crawl（WEKNORA_ENABLED=true 自动走 WeKnora，正是线上问答实际读的库）；幂等——已提交 URL 记 /app/data/corpus_ingested.json 台账，重跑跳过；每条间隔 3 秒；失败清单落 /tmp/corpus_fail.json。
+
+**结果**：10/10 提交成功，9 条 completed、1 条（GitHub 页）processing 稍后自转；WeKnora 文档 7→17。端到端验证：公开问答「十四五智能制造发展规划的发展目标」→ engine=weknora、17 处引用、答案为规划原文要点。
+
+**坑与教训**：
+1. 容器外算 token 必须双拼 SECRET_KEY（hash_password 会再追加一次）——脚本第一版 401 十连败；
+2. ssh_upload 后本地再改文件不会自动同步，docker cp 前要重新 upload（第二次 401 的原因）；
+3. 台账写盘代码里 `{r["url"] for r in ok}` 的 ok 条目没带 url 键——幂等台账崩在最后一步，手工用 urls.json 补写；
+4. Windows Git Bash 里 curl -d 直接带中文会以 GBK 发出，服务端解码后变成"请输入问题"——UTF-8 JSON 落文件用 --data-binary @file。
