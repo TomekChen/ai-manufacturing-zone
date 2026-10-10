@@ -631,7 +631,7 @@ function App() {
             <button className="btn btn-ghost" onClick={() => document.getElementById('tour')?.scrollIntoView({ behavior: 'smooth' })}>3 分钟演示动线 →</button>
           </div>
           <div className="hero-stats">
-            <div className="hero-stat"><b>2 个</b><span>智能体已上线</span></div>
+            <div className="hero-stat"><b>{liveAgents.length} 个</b><span>智能体已上线</span></div>
             <div className="hero-stat"><b>150+</b><span>项自动化测试</span></div>
             <div className="hero-stat"><b>引用可溯</b><span>回答附知识库出处</span></div>
             <div className="hero-stat"><b>7×24</b><span>心跳监控值守</span></div>

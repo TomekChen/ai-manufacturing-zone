@@ -25,7 +25,9 @@ export default function AgentOrder({ agent, onClose }) {
       });
       if (!res.ok) { setErr(await readError(res)); return; }
       const data = await res.json();
-      setResult(data.result && typeof data.result === 'object' ? data.result : data);
+      // A2 统一契约 {ok, agent_id, result, refs, confidence}：明细在 result 里，confidence 在外层，合进来展示
+      const inner = data.result && typeof data.result === 'object' ? data.result : data;
+      setResult({ ...inner, confidence: data.confidence !== undefined ? data.confidence : inner.confidence });
     } catch (e) {
       setErr('网络错误：' + (e.message || e));
     } finally {
