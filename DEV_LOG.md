@@ -1385,3 +1385,20 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 2. ssh_upload 后本地再改文件不会自动同步，docker cp 前要重新 upload（第二次 401 的原因）；
 3. 台账写盘代码里 `{r["url"] for r in ok}` 的 ok 条目没带 url 键——幂等台账崩在最后一步，手工用 urls.json 补写；
 4. Windows Git Bash 里 curl -d 直接带中文会以 GBK 发出，服务端解码后变成"请输入问题"——UTF-8 JSON 落文件用 --data-binary @file。
+
+## 四十四、A7 订单机器人上线 + 首个企业定制方案交付（2026-10-10）
+
+**背景**：老板转来一份制造企业真实需求（金蝶 K3 WISE 12.1 无 API、图纸分散无 PDM、订单靠邮件/网页人工抓取、手工对账 3-5 天、50 间接人员），问平台上有没有匹配案例。盘点 13 张项目卡：知识库问答/智屏/高科 MES/多智能体编排强匹配；订单机器人、对账助手为空白，决定按注册表模式二开订单机器人补上。
+
+**A7 订单机器人**（agents/order_catcher.py，第三个 live 智能体）：粘贴订单原文（邮件/网页询盘/聊天记录）→ LLM 强制 JSON 抽结构化工单（客户/品名/数量/交期/联系方式/备注/缺失字段）。解析失败收敛 RuntimeError(502)、入参校验 ValueError(400)、LLM 异常收敛 502；置信度三档（客户+产品齐=0.8/有缺失 0.6/不全 0.3）。前端新增 AgentOrder.jsx（ui=order 分流，复用 prd-* 样式零新增 CSS）；注册表顺序 prd→kb→order；planner 触发词「订单/抓单/询盘/下单/漏单」。
+
+**测试与部署**：tests/test_order_catcher.py 26 断言（打桩 chat + 桩 has_api_key 解本机无 key 的 503）；全量回归 13 文件 340 断言绿（test_agents/test_mcp_endpoint 两处「预期智能体集合」断言更新为三个，属有意变更）。服务器 compose 重建上线，docker build 超出 SSH 会话时限 → nohup 后台跑。
+
+**PRD 实测交付**：以该企业画像（K3/ISO/50 人）调 /api/admin/prd/generate（引导模式），知识库接地 10 条、qwen-plus，产出 8.6 千字 PRD。AI 编造的占位数据（漏单率 3.7%「据客户访谈」、计划达成率 78%、错误日期）已在交差文档中修正/标注待基线测量；文档落 docs/proposals/。
+
+**浏览器实测抓出三修**（aab2f6d）：① LLM 把无年份交期猜成 2023 → prompt 改为保留原文写法；② AgentOrder 未合并外层 confidence 显示「—」；③ 首页 hero「2 个智能体已上线」写死 → liveAgents.length 动态化。复验：置信度 60%、交期「12月20日」、首页「3 个」。
+
+**坑与教训**：
+1. evaluate_script 的 function 参数必须是箭头函数字符串，裸语句报 SyntaxError；
+2. trigger 关键词别用「PO」这类短英文串——route_task 是子串匹配，"po" 会命中 "process/report"；
+3. docker compose up --build 的 removal 竞态报错（"already in progress"）是瞬态，容器最终 Up 即有效。
