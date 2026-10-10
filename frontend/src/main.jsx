@@ -11,6 +11,7 @@ import AdminEval from './AdminEval';
 import AdminPRD from './AdminPRD';
 import AgentPRD from './AgentPRD';
 import AgentKB from './AgentKB';
+import AgentOrder from './AgentOrder';
 import DemoBooking from './DemoBooking';
 import AdminBookings from './AdminBookings';
 import AdminSessions from './AdminSessions';
@@ -833,10 +834,12 @@ function App() {
           onSave={saveProject}
         />
       )}
-      {/* A3 起：按注册表 ui 字段分流体验弹窗（qa=问答 / 其余=方案生成表单） */}
+      {/* A3 起：按注册表 ui 字段分流体验弹窗（qa=问答 / order=工单抽取 / 其余=方案生成表单） */}
       {activeAgent && (activeAgent.ui === 'qa'
         ? <AgentKB agent={activeAgent} onClose={() => setActiveAgent(null)} />
-        : <AgentPRD agent={activeAgent} onClose={() => setActiveAgent(null)} />)}
+        : activeAgent.ui === 'order'
+          ? <AgentOrder agent={activeAgent} onClose={() => setActiveAgent(null)} />
+          : <AgentPRD agent={activeAgent} onClose={() => setActiveAgent(null)} />)}
       {bookingFor !== null && (
         <DemoBooking
           projects={projects || []}

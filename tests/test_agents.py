@@ -133,8 +133,9 @@ def test_kb_assistant():
     check("kb-assistant meta.ui=qa", meta.get("ui") == "qa")
     check("prd-advisor meta.ui=prd", prd.meta().get("ui") == "prd")
     check("kb-assistant endpoint 指向通用 run", meta["endpoint"] == "/api/agents/kb-assistant/run")
-    check("公开注册表 = 两个 live：prd-advisor 在前 kb-assistant 在后",
-          [x["id"] for x in agents.list_agents(only_live=True)] == ["prd-advisor", "kb-assistant"])
+    check("公开注册表 = 三个 live：prd → kb → order",
+          [x["id"] for x in agents.list_agents(only_live=True)] ==
+          ["prd-advisor", "kb-assistant", "order-catcher"])
     check("route_task：知识库问答 → kb-assistant", route_task("知识库里有哪些资料") is kb)
     check("route_task：触发词'是什么'命中 kb-assistant", route_task("MES 是什么") is kb)
     check("route_task 优先级：prd 任务仍归先注册的 prd-advisor",
