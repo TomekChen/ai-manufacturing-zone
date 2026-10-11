@@ -16,6 +16,7 @@ R5 起 app.py 只做三件事：
   kb_weknora.py WeKnora 引擎转发
   prd_sessions.py 方案会话账本（存档/回放/分享/入库飞轮）
   mcp_endpoint.py MCP 远程端点（Streamable HTTP /mcp）
+  order_mail.py  订单邮件自动捕获（IMAP 轮询 → 订单机器人抽取 → 捕获账本）
 """
 import os
 
@@ -31,6 +32,7 @@ import agents_api
 import webapp
 import prd_sessions
 import mcp_endpoint
+import order_mail
 
 # 供测试/运维引用的兼容转出口（app.<name> 与拆分前同一对象）
 from core import (DATA_DIR, PROJECTS_FILE, ADMIN_ACCOUNT, ADMIN_PASSWORD,  # noqa: F401
@@ -58,10 +60,14 @@ portal.start_heartbeat()
 prd_sessions.init(DATA_DIR, load_json, save_json, rate_limited, require_admin, KB)
 kb_admin.init(KB, require_admin, DATA_DIR)
 kb_weknora.init(require_admin)
+order_mail.init(DATA_DIR, load_json, save_json, require_admin)
 
 for module in (portal, qa, agents_api, webapp, kb_admin, kb_weknora, prd_sessions,
-               mcp_endpoint):
+               mcp_endpoint, order_mail):
     app.register_blueprint(module.bp)
+
+# 订单邮件轮询线程（enabled 且配置齐全才会真正连邮箱；与 heartbeat 同为 daemon）
+order_mail.start_poller()
 
 
 if __name__ == "__main__":

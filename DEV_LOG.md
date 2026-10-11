@@ -1402,3 +1402,25 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 1. evaluate_script 的 function 参数必须是箭头函数字符串，裸语句报 SyntaxError；
 2. trigger 关键词别用「PO」这类短英文串——route_task 是子串匹配，"po" 会命中 "process/report"；
 3. docker compose up --build 的 removal 竞态报错（"already in progress"）是瞬态，容器最终 Up 即有效。
+
+## 四十五、A8 订单邮件自动捕获：IMAP 轮询 → 订单机器人抽取 → 管理端账本（2026-10-11）
+
+**背景**：A7 订单机器人只能"粘贴抽取"，客户最痛的是漏单发生在"没人去粘贴"的环节。A8 补上自动化闭环：配置一个企业收件邮箱，平台每 5 分钟 IMAP 轮询新邮件，正文自动送订单机器人抽取，结构化工单进管理端账本等人工确认。灵感来自 OpenMuse（CopilotKit 的个人智能体模板）的 agent computer 模式——学它的持久任务+人工接管理念，不引入它的 TS 栈与云依赖。
+
+**实现**（order_mail.py，Blueprint+依赖注入，同 prd_sessions 模式）：
+- 轮询：daemon 线程（同 portal.start_heartbeat 模式）每 300s 巡检，enabled 才真连；UID 增量拉取（`UID last+1:*`），UIDVALIDITY 变化自动重扫全箱，取信用 BODY.PEEK 不改邮箱已读标记；
+- 去重：RFC822 Message-ID，缺失退回 from+subject+date 哈希；
+- 抽取：直接复用注册表 `get_agent("order-catcher").run()`，order_catcher.py **零改动**——A7 的抽取链（校验→LLM→解析→置信度）原样生效；
+- 不丢信：抽取失败记 error 账（含原文摘录）供人工补录，空正文记 skipped；
+- 存储：data/order_mail.json（口令只写不回显，接口永不返回 password）、order_captures.json（append-only 留 500 条）、order_mail_status.json（轮询状态与配置写入解耦）；
+- 端点（全 admin）：GET/POST /api/admin/order-mail（配置）、/test（试连）、/fetch（手动拉）、/captures（账本）、/captures/:id（确认/忽略流转）；
+- 前端：AdminOrderMail.jsx + 管理后台「订单捕获」页签（配置表单+测试连接+立即拉取+账本列表）。
+
+**测试**：tests/test_order_mail.py 38 断言全绿（FakeConn 假 IMAP 服务器 + FlakyAgent 抽取桩，覆盖增量/去重/UIDVALIDITY 重扫/error 账/skipped/口令不回显/状态流转/401-400-404-502-503）；全量回归 14 文件 378 断言绿。
+
+**部署**：备份 data → tar 上传 → nohup compose build → MD5 双端核对（app.py/order_mail.py/dist js 一致）→ 冒烟（home 200、注册表三智能体、order-mail 端点 401 鉴权正常、容器日志干净）。服务器 Dockerfile 单独维护 source/ 前缀（两套目录约定），本地 Dockerfile 同步加 order_mail.py。
+
+**坑与教训**：
+1. fetch_once 增量语义依赖"传入配置带 last_uid"——单测若每次传裸 dict(CFG) 就测不到增量路径，必须读回已存配置（读回的才是生产真实路径）；
+2. int(b"123") 在 Python 3 可用（bytes 直接转 int），IMAP 返回的 bytes uid 无需 decode；
+3. FakeConn 的 uid search 必须模拟真实语义（参数被忽略返回全部 uid 也行，但断言增量时要靠 last_uid 过滤，别把桩写成"自动增量"）。

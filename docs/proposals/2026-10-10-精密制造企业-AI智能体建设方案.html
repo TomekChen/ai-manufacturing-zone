@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 智能体建设方案（某精密制造企业）</title>
+<style>
+:root{
+  --accent:#0b5fd0;
+  --accent-soft:#eaf2fc;
+  --bg:#ffffff;
+  --bg-soft:#fafafa;
+  --ink:#171717;
+  --ink-2:#555555;
+  --ink-3:#999999;
+  --line:#e5e5e5;
+  --radius:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",system-ui,-apple-system,sans-serif;
+  color:var(--ink);background:var(--bg);font-size:16px;line-height:1.7;
+}
+.page{max-width:920px;margin:0 auto;padding:0 24px}
+
+/* ===== 封面区 ===== */
+.hero{padding:88px 0 56px;border-bottom:1px solid var(--line)}
+.hero .badge{
+  display:inline-block;background:var(--accent-soft);color:var(--accent);
+  font-size:13px;font-weight:600;padding:5px 14px;border-radius:9999px;margin-bottom:24px;
+  letter-spacing:1px;
+}
+.hero h1{font-size:42px;font-weight:700;letter-spacing:-1px;line-height:1.2;max-width:720px}
+.hero .sub{font-size:19px;color:var(--ink-2);margin-top:14px;max-width:640px}
+.hero .meta{margin-top:32px;display:flex;flex-wrap:wrap;gap:12px 32px;font-size:14px;color:var(--ink-3)}
+.hero .meta b{color:var(--ink-2);font-weight:600}
+
+/* ===== 章节 ===== */
+section{padding:64px 0 8px}
+section > h2{
+  font-size:28px;font-weight:600;letter-spacing:-0.5px;margin-bottom:8px;
+  display:flex;align-items:baseline;gap:12px;
+}
+section > h2 .no{
+  font-size:15px;font-weight:700;color:var(--accent);letter-spacing:0;
+  background:var(--accent-soft);border-radius:6px;padding:2px 10px;flex:none;
+}
+.lead{color:var(--ink-2);margin-bottom:28px;font-size:16px}
+
+h3{font-size:20px;font-weight:600;margin:40px 0 14px}
+p{margin-bottom:14px}
+ul.plain{margin:0 0 18px 0;padding-left:0;list-style:none}
+ul.plain li{padding-left:22px;position:relative;margin-bottom:10px}
+ul.plain li::before{content:"";position:absolute;left:2px;top:11px;width:7px;height:7px;border-radius:2px;background:var(--accent);opacity:.85}
+
+/* ===== 引用块 ===== */
+blockquote{
+  background:var(--bg-soft);border-left:3px solid var(--accent);
+  border-radius:0 var(--radius) var(--radius) 0;
+  padding:18px 22px;margin:20px 0;color:var(--ink-2);font-size:15px;line-height:1.75;
+}
+blockquote b{color:var(--ink)}
+blockquote.warn{border-left-color:#f5a623;background:#fdf8ee}
+
+/* ===== 表格 ===== */
+.tbl-wrap{overflow-x:auto;margin:20px 0 8px;border:1px solid var(--line);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:640px}
+th{
+  background:var(--bg-soft);text-align:left;font-weight:600;color:var(--ink-2);
+  padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#fcfcfd}
+td b,td strong{color:var(--ink);font-weight:600}
+.stars{color:var(--accent);white-space:nowrap;font-weight:600;letter-spacing:1px}
+td .muted{color:var(--ink-3)}
+
+/* ===== 结论强调条 ===== */
+.callout{
+  background:var(--accent-soft);border-radius:var(--radius);
+  padding:22px 26px;margin:24px 0;font-size:15.5px;line-height:1.8;
+}
+.callout b{color:var(--accent)}
+
+/* ===== 待确认问题 ===== */
+.qlist{counter-reset:q;margin:20px 0}
+.qitem{
+  display:flex;gap:18px;padding:18px 0;border-bottom:1px solid var(--line);
+}
+.qitem:last-child{border-bottom:none}
+.qitem .qno{
+  counter-increment:q;flex:none;width:34px;height:34px;border-radius:8px;
+  background:var(--accent);color:#fff;font-weight:600;font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+}
+.qitem .qno::before{content:counter(q)}
+.qitem .qtext b{color:var(--ink)}
+.qitem .qtext span{color:var(--ink-3);font-size:14px}
+
+/* ===== 架构图（静态排版替代 mermaid） ===== */
+.arch{margin:24px 0;border:1px solid var(--line);border-radius:var(--radius);padding:28px 24px;background:var(--bg-soft)}
+.arch-row{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+.arch-node{
+  background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:10px 18px;font-size:14.5px;font-weight:500;color:var(--ink);text-align:center;
+}
+.arch-node.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.arch-node.group{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent)}
+.arch-arrow{text-align:center;color:var(--ink-3);font-size:18px;line-height:1;padding:6px 0}
+.arch-label{
+  text-align:center;font-size:13px;color:var(--ink-3);margin:10px 0 8px;
+  letter-spacing:2px;font-weight:500;
+}
+.arch-box{
+  border:1px dashed var(--line);border-radius:8px;padding:14px;margin-top:4px;
+}
+
+/* ===== 附录 PRD 分隔 ===== */
+.appendix{
+  margin-top:56px;border-top:3px solid var(--ink);padding-top:48px;
+}
+.appendix .tag{
+  display:inline-block;background:var(--ink);color:#fff;font-size:13px;
+  padding:4px 12px;border-radius:6px;margin-bottom:16px;letter-spacing:1px;
+}
+
+/* ===== 签署页 ===== */
+.sign{
+  margin-top:56px;background:var(--bg-soft);border:1px solid var(--line);
+  border-radius:var(--radius);padding:36px 32px;
+}
+.sign h3{margin-top:0}
+.sign .row{display:flex;gap:40px;flex-wrap:wrap;margin-top:20px;font-size:15px;color:var(--ink-2)}
+.sign .row div{min-width:220px}
+.sign .blank{
+  display:inline-block;min-width:180px;border-bottom:1px solid var(--ink-3);
+  height:22px;vertical-align:bottom;
+}
+
+/* ===== 页脚 ===== */
+footer{
+  margin-top:72px;border-top:1px solid var(--line);
+  padding:40px 0 56px;text-align:center;color:var(--ink-3);font-size:14px;
+}
+footer b{color:var(--ink-2)}
+
+/* ===== 打印 ===== */
+@media print{
+  .hero{padding:32px 0 24px}
+  section{padding:36px 0 4px}
+  .tbl-wrap{break-inside:avoid}
+  body{font-size:13px}
+}
+
+/* ===== 手机 ===== */
+@media (max-width:640px){
+  .hero{padding:56px 0 36px}
+  .hero h1{font-size:30px}
+  section{padding:44px 0 4px}
+  section > h2{font-size:22px;flex-wrap:wrap}
+  .page{padding:0 16px}
+  table{font-size:13.5px}
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- 封面 -->
+  <header class="hero">
+    <span class="badge">智能制造 · AI 智能体平台</span>
+    <h1>AI 智能体建设方案</h1>
+    <p class="sub">面向某精密制造企业（ISO 认证）的智能制造知识中枢与流程自治系统</p>
+    <div class="meta">
+      <span><b>文档版本</b>：v1.0（人工复核版）</span>
+      <span><b>日期</b>：2026-10-10</span>
+      <span><b>性质</b>：售前方案 · 可现场演示</span>
+    </div>
+  </header>
+
+  <!-- 一、客户现状摘要 -->
+  <section>
+    <h2><span class="no">一</span>客户现状摘要</h2>
+    <ul class="plain">
+      <li><b>信息化基础</b>：金蝶 K3 WISE 12.1（无标准 API，数据导出依赖 Excel）；图纸分散存储（个人电脑 + 共享盘，无 PDM/PLM）；订单来自客户邮件与客户网页系统（人工抓取）；ISO 体系文件以纸质 / Word / Excel 管理；间接人员约 50 人。</li>
+      <li><b>核心痛点</b>：数据孤岛（高）、知识分散查找难（高）、订单人工抓取易漏单（高）、手工排程响应慢（中高）、会计手工对账 3-5 天（中）。</li>
+    </ul>
+  </section>
+
+  <!-- 二、平台案例匹配 -->
+  <section>
+    <h2><span class="no">二</span>平台案例匹配（可现场演示）</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>客户需求</th><th>我们的可演示案例</th><th>匹配度</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>知识分散 → 统一知识库秒级检索</b></td>
+            <td><b>知识库问答</b>（WeKnora 引擎，门户首页可体验）</td>
+            <td class="stars">★★★★★</td>
+            <td>17 篇制造业政策 / 技术语料已入库，语义检索 + 引用溯源；客户自己的图纸 / SOP / 体系文件入库后即同款能力</td>
+          </tr>
+          <tr>
+            <td><b>数据实时可视 → 经营驾驶舱</b></td>
+            <td><b>智屏 · 可视化大屏</b>（拖拽搭建，发布即投屏）</td>
+            <td class="stars">★★★★★</td>
+            <td>对应"经营哨兵"需求，K3 数据接入后即可出实时看板</td>
+          </tr>
+          <tr>
+            <td><b>生产工单 / 报工 / 物料</b></td>
+            <td><b>高科 MES</b>（工单、物料、设备、报工全流程 + 实时看板）</td>
+            <td class="stars">★★★★</td>
+            <td>补齐 K3 缺失的车间执行层</td>
+          </tr>
+          <tr>
+            <td><b>流程自动化 → 智能体驱动</b></td>
+            <td><b>多智能体编排平台本身</b>（planner 派发 + 公开运行端点 + MCP 协议）</td>
+            <td class="stars">★★★★</td>
+            <td>已上线 3 个智能体：售前方案师 / 知识管家 / <b>订单机器人</b></td>
+          </tr>
+          <tr>
+            <td><b>订单人工抓取 → 自动化</b></td>
+            <td><b>订单机器人</b>（订单原文 → 结构化工单，2026-10-10 上线）</td>
+            <td class="stars">★★★★</td>
+            <td>现支持粘贴邮件 / 网页 / 聊天记录抽取；接入企业邮箱 IMAP 即可全自动</td>
+          </tr>
+          <tr>
+            <td><b>图纸 / 研发设计</b></td>
+            <td>AI CAD 工作台（自然语言 → STEP 模型）</td>
+            <td class="stars">★★★</td>
+            <td>加分项，非本期核心</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <b>结论</b>：客户方案的三层架构（数据层 → 智能层 → 应用层）每一层我们都有可现场演示的活系统；订单机器人、对账助手两个新智能体按平台既有模式二开（各 1-2 周量级）；K3 WISE 数据接入建议实施期第一步进场摸底（优先争取 SQL Server 只读直连，退而 Excel 定时采集）。
+    </div>
+  </section>
+
+  <!-- 三、待客户确认 -->
+  <section>
+    <h2><span class="no">三</span>待客户确认的关键问题（启动会前）</h2>
+    <div class="qlist">
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>K3 WISE 在用模块？</b>能否开放 SQL Server <b>只读直连</b>权限？<br><span>比 Excel 导出效率高一个量级，直接决定数据接入方式</span></div>
+      </div>
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>图纸总量与格式</b>（DWG / PDF / JPG）？命名规范程度？<br><span>影响 OCR 识别精度与知识打标策略</span></div>
+      </div>
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>主要客户数量及订单载体</b>（邮件附件 PDF / 网页表单 / EDI）？能否提供 1-2 份脱敏订单样本？<br><span>决定订单捕手 Agent 的适配复杂度</span></div>
+      </div>
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>五个目标排序</b>：图纸秒级检索 / 订单自动抓取 / 自动对账 / 智能排程 / 经营可视？<br><span>确保 Phase 1 PoC 聚焦最高价值点</span></div>
+      </div>
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>预算范围与分阶段付费意向？</b><br><span>影响技术选型（私有化部署 vs 混合云）与商务模式</span></div>
+      </div>
+      <div class="qitem">
+        <span class="qno"></span>
+        <div class="qtext"><b>是否指定跨部门协调人与专职知识管理员？</b><br><span>保障知识库建设质量与进度</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 四、附录 PRD -->
+  <section class="appendix">
+    <span class="tag">附录</span>
+    <h2><span class="no">四</span>AI 生成的功能需求 PRD（引导模式，人工复核版）</h2>
+    <blockquote class="warn">
+      <b>复核说明</b>：原文中"漏单率 3.7%（据客户访谈）""计划达成率 ≈78%""生成日期 2025 年 4 月 11 日"为 AI 推断的占位数据，已修正 / 标注为待客户基线测量；第 9 节资料引用对应本平台知识库语料，宣讲前建议逐条核对原文。
+    </blockquote>
+
+    <h3>1. 客户与业务背景</h3>
+    <p>该企业为典型中小型精密制造企业，具备完整制造价值链（研发 → 模具 → 采购 → 生产 → 品质 → 仓储 → 报关 → 财务），但数字化基础薄弱：</p>
+    <ul class="plain">
+      <li><b>系统孤岛严重</b>：金蝶 K3 WISE 12.1（无标准 API，仅支持 Excel 导出）；图纸 / 工艺 / 体系文件分散在个人电脑、共享盘、纸质档案中；订单依赖人工从邮件 / 客户网页抓取；</li>
+      <li><b>知识管理失效</b>：ISO 体系文件、奖惩制度、作业指导书（SOP）、模具维修记录等未结构化，员工查找平均耗时 8-15 分钟 / 次；</li>
+      <li><b>流程自动化缺失</b>：订单漏录率偏高（具体基线待客户实测）；会计对账周期 3-5 天；车间排程靠 Excel + 经验，插单响应延迟 ≥8 小时；生管每日重复录入数据超 20 项；</li>
+      <li><b>合规与升级压力并存</b>：已通过 ISO 9001 认证，但审核准备耗时长（单次内审需 5 人日），且缺乏数字化证据链支撑持续改进。</li>
+    </ul>
+    <blockquote><b>核心矛盾</b>："<b>人找信息</b>" → 应升级为"<b>信息找人</b>"；"<b>人驱动流程</b>" → 应进化为"<b>智能体驱动自治流程</b>"。</blockquote>
+
+    <h3>2. AI 智能体平台转型目标（业务价值导向）</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>维度</th><th>当前状态</th><th>目标状态</th><th>量化价值锚点</th></tr></thead>
+        <tbody>
+          <tr><td><b>知识治理</b></td><td>图纸 / 制度 / 档案检索平均耗时 12min，准确率 &lt;65%</td><td>秒级精准检索（语义 + 图谱 + OCR + 版本比对），查全率 ≥98%，查准率 ≥95%</td><td>年节省知识查找工时 ≈1,800 人·小时</td></tr>
+          <tr><td><b>订单协同</b></td><td>人工抓取邮件 / 网页，漏单率待基线测量</td><td>自动监听客户邮箱 + 网页 DOM/API（兼容无 API 场景），自动解析、校验、创建 K3 销售订单</td><td>漏单率 → ≤0.2%，订单入系统时效 ≤15 分钟</td></tr>
+          <tr><td><b>财务提效</b></td><td>会计每月手工对账 3-5 天，流水 → 应收 / 应付匹配依赖人工比对</td><td>自动拉取银行回单（OCR + 规则引擎 + AI 相似度匹配），生成差异报告 + 建议分录</td><td>对账周期压缩至 ≤2 小时，差错率降至 0.05% 以内</td></tr>
+          <tr><td><b>生产调度</b></td><td>Excel 排程，无法动态响应缺料 / 插单 / 设备故障，计划达成率待基线测量</td><td>基于实时库存、BOM、设备 OEE、模具寿命、交期优先级的多目标智能排程 Agent</td><td>计划达成率 ≥92%，插单响应 ≤2 小时，换模等待减少 30%</td></tr>
+          <tr><td><b>经营可视</b></td><td>管理层看板为静态 PPT 周报，数据滞后 3-7 天</td><td>实时驾驶舱（订单交付健康度、采购齐套率、车间 OEE、质量不良 TOP5、现金流预测）</td><td>关键指标 T+0 可视，决策响应提速 50% 以上</td></tr>
+          <tr><td><b>人力释放</b></td><td>间接人员 50 人中，约 35% 时间消耗在重复性事务</td><td>释放 ≥15 人·年等效工时，转向工艺优化、客户协同、精益改善等高价值活动</td><td>ROI 测算周期 ≤14 个月（按人均年薪 15 万元计）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>3. 目标用户与角色</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>角色</th><th>典型用户</th><th>核心诉求</th><th>使用频次</th></tr></thead>
+        <tbody>
+          <tr><td><b>品质工程师</b></td><td>品质部主管、IQC/IPQC</td><td>快速调取历史不良品图纸、检验标准、模具维修记录、客诉 8D 报告</td><td>高频（日均 5-10 次）</td></tr>
+          <tr><td><b>生管专员</b></td><td>生产计划员、物控员</td><td>一键获取齐套分析、插单可行性评估、模具可用性预警</td><td>高频（日均 8-15 次）</td></tr>
+          <tr><td><b>会计专员</b></td><td>应收 / 应付 / 总账会计</td><td>自动完成银行流水匹配、异常凭证提示、月结检查清单</td><td>中高频（日均 3-5 次）</td></tr>
+          <tr><td><b>模具工程师</b></td><td>模具设计 / 维修工程师</td><td>查找同类模具结构、材料热处理参数、维修履历、失效模式库</td><td>中频（日均 2-4 次）</td></tr>
+          <tr><td><b>ISO 体系专员</b></td><td>体系管理员</td><td>自动生成内审检查表、条款对应证据索引、不符合项闭环跟踪</td><td>低频但关键（周 / 月级）</td></tr>
+          <tr><td><b>车间班组长</b></td><td>各线组长</td><td>查看当日工单、物料齐套状态、设备点检提醒、异常上报入口</td><td>高频（日均 10+ 次）</td></tr>
+          <tr><td><b>管理层</b></td><td>总经理、运营总监、厂长</td><td>实时掌握交付健康度、成本偏差、质量趋势、现金流预警</td><td>中频（日 / 周级）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <blockquote>所有角色均通过<b>统一 Web 门户 + 企业微信 / 钉钉轻应用</b>接入，无需安装客户端。</blockquote>
+
+    <h3>4. 核心智能体（Agent）功能需求清单</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>智能体</th><th>应用场景</th><th>输入</th><th>输出</th><th>业务价值</th></tr></thead>
+        <tbody>
+          <tr><td><b>🔍 图谱智搜</b></td><td>秒级检索图纸 / 工艺卡 / SOP / ISO 条款 / 奖惩制度 / 模具档案</td><td>自然语言提问（如"找 2023 年 A 类模具维修超 3 次的记录"）</td><td>结构化结果卡片（原文定位、关联图谱节点、版本对比、责任人）+ 可视化知识关系图</td><td>解决"知识找不到、看不懂、不敢用"；支撑 ISO 快速取证</td></tr>
+          <tr><td><b>📬 订单捕手</b></td><td>自动抓取客户邮件附件（PDF/Excel）、网页订单表单（适配无 API 客户系统）</td><td>邮箱 IMAP 配置 / 网页 URL + 选择器规则 / K3 基础物料 / 客户主数据</td><td>标准化订单 JSON（客户、PO 号、交期、物料、数量、币种），自动触发 K3 订单创建流程</td><td>杜绝漏单错录，订单入系统时效 ≤15 分钟</td></tr>
+          <tr><td><b>💰 对账精灵</b></td><td>银行流水 → K3 应收 / 应付自动匹配（支持多币种、部分付款、红冲单）</td><td>银行回单 PDF/CSV（OCR 识别）+ K3 应收 / 应付明细导出 Excel</td><td>匹配成功清单 + 差异报告（疑似匹配项 + 置信度）+ 建议分录草稿</td><td>对账周期从 3-5 天 → ≤2 小时，差错率 &lt;0.05%</td></tr>
+          <tr><td><b>🏭 排程罗盘</b></td><td>多约束动态排程（设备产能、模具寿命、物料齐套、交期优先级、换模时间）</td><td>K3 BOM / 库存 / 工单数据（Excel 导入）+ 设备 OEE 数据 + 模具寿命台账</td><td>可视化甘特图（含冲突预警）、工单下发包、插单影响模拟报告</td><td>插单响应 ≤2 小时，计划达成率 ≥92%，换模等待 ↓30%</td></tr>
+          <tr><td><b>📊 经营哨兵</b></td><td>实时监控经营健康度（交付准时率、采购齐套率、车间 OEE、不良率 TOP5、现金流缺口预警）</td><td>K3 销售 / 采购 / 库存 / 生产 / 财务模块 Excel 导出数据（每日定时）</td><td>动态驾驶舱（Web + 企微消息推送）、异常指标根因简析</td><td>管理层 T+0 掌握关键指标，问题发现提速 50%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <blockquote>所有 Agent 均支持<b>多轮对话澄清意图</b>、<b>操作留痕审计</b>、<b>人工覆盖干预</b>（Override 机制），符合 ISO 过程可追溯要求。</blockquote>
+
+    <h3>5. 平台功能需求</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>功能模块</th><th>子能力</th><th>详细说明</th><th>合规 / 集成要求</th></tr></thead>
+        <tbody>
+          <tr><td><b>🧠 知识中枢</b></td><td>多源知识接入 · 智能分类打标 · 版本与权限管控 · ISO 条款映射引擎</td><td>支持上传 PDF/Word/Excel/图片/TXT；自动 OCR 识别图纸标题栏；NLP + 规则引擎打标；按部门 / 角色 / 密级设权；内置 ISO 9001:2015 条款库一键关联</td><td>符合 ISO 9001 7.5"成文信息控制"；支持导出审核要求电子证据包</td></tr>
+          <tr><td><b>💬 对话与多轮引擎</b></td><td>上下文感知 · 意图识别 + 槽位填充 · 对话状态管理 · 人工接管无缝切换</td><td>跨 Agent 上下文；模糊查询；对话中断可续；人工介入自动同步历史</td><td>会话日志留存 ≥180 天，满足 GDPR / 等保 2.0 审计要求</td></tr>
+          <tr><td><b>⚙️ 工作流编排中心</b></td><td>可视化拖拽编排 · 条件分支 / 并行任务 · 失败重试 + 告警</td><td>低代码编排多 Agent 联动；条件逻辑（如齐套率 &lt;90% 暂停排程并通知采购）；失败自动邮件 + 企微告警</td><td>标准 Webhook 接口，预留 K3 API 扩展点</td></tr>
+          <tr><td><b>🔗 系统集成网关</b></td><td>K3 WISE 适配器（Excel 桥接）· 邮箱协议 · 网页爬取引擎 · 企微 / 钉钉开放平台</td><td>K3 适配器定时读取指定 Excel 模板写入平台库；支持主流企业邮箱；网页适配器支持 XPath/CSS 选择器；OAuth2.0 接入企微</td><td>所有集成不修改 K3 原系统，符合金蝶第三方接入安全规范</td></tr>
+          <tr><td><b>🔐 权限与安全中心</b></td><td>RBAC + ABAC 混合模型 · 敏感操作二次验证 · 数据脱敏 · 操作审计日志</td><td>按部门 / 岗位 / 项目组授权；查看合同 / 流水需二次验证；图纸预览自动隐藏客户 LOGO / 价格；全操作留痕</td><td>满足等保 2.0 三级要求；平台侧 ISO 27001 认证</td></tr>
+          <tr><td><b>📈 运营看板</b></td><td>Agent 使用热力图 · 知识库健康度 · 流程自动化率 · NPS 调研</td><td>各 Agent 调用量、响应时长、人工干预率；自动检测"未归档图纸""过期 SOP"；月度自动化替代工时统计</td><td>支持导出 PDF/Excel 报告，用于数字化成熟度评估</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>6. 非功能需求</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>类别</th><th>要求</th><th>验收方式</th></tr></thead>
+        <tbody>
+          <tr><td><b>性能</b></td><td>知识检索响应 ≤1.5 秒（95% 分位）；订单捕手单日处理 ≥500 单；对账精灵 1 万条流水 ≤8 分钟</td><td>JMeter 压测报告 + 客户真实数据集验证</td></tr>
+          <tr><td><b>安全与合规</b></td><td>传输加密 TLS 1.2+；敏感数据 AES-256 加密存储；符合《网络安全法》《个人信息保护法》；等保 2.0 二级备案（平台侧）</td><td>第三方渗透测试报告 + 等保测评报告</td></tr>
+          <tr><td><b>可用性</b></td><td>Web 门户可用性 ≥99.5%；关键 Agent SLA ≥99.9%</td><td>运维监控日志 + SLA 月度报表</td></tr>
+          <tr><td><b>可维护性</b></td><td>Agent 配置界面化；知识库 Excel 批量导入 / 导出；日志四级分级；中文运维手册与故障自检向导</td><td>客户 IT 人员独立完成 1 次知识库批量更新 + 1 次 Agent 参数调整实操验证</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7. 技术架构建议（轻量、可控、可演进）</h3>
+    <div class="arch">
+      <div class="arch-label">终 端 接 入</div>
+      <div class="arch-row">
+        <span class="arch-node">Web 门户</span>
+        <span class="arch-node">企业微信</span>
+        <span class="arch-node">钉钉</span>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-row"><span class="arch-node">统一接入网关</span></div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-row"><span class="arch-node accent">AI 智能体平台</span></div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-row">
+        <span class="arch-node group">知识中枢</span>
+        <span class="arch-node group">工作流引擎</span>
+        <span class="arch-node group">对话管理</span>
+        <span class="arch-node group">集成适配层</span>
+      </div>
+      <div class="arch-label">数 据 底 座</div>
+      <div class="arch-box">
+        <div class="arch-row">
+          <span class="arch-node">向量数据库 ChromaDB</span>
+          <span class="arch-node">关系数据库 PostgreSQL</span>
+          <span class="arch-node">规则引擎 Drools</span>
+          <span class="arch-node">LLM 推理 Ollama + 本地微调</span>
+        </div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-label">外 部 系 统</div>
+      <div class="arch-row">
+        <span class="arch-node">K3 WISE 12.1（Excel 桥接）</span>
+        <span class="arch-node">企业邮箱（IMAP）</span>
+        <span class="arch-node">客户网页系统（无头浏览器）</span>
+      </div>
+    </div>
+    <blockquote>
+      <b>架构亮点</b>：<br>
+      ① <b>零侵入 K3</b>：仅通过 Excel 文件交换，规避老系统 API 缺失风险；<br>
+      ② <b>国产化友好</b>：数据库 / OS / 中间件全栈支持麒麟 V10 + 达梦 / 人大金仓；<br>
+      ③ <b>模型轻量化</b>：Qwen2-1.5B / Phi-3 等小模型微调，GPU 显存需求 ≤8GB，可部署于国产昇腾 910B；<br>
+      ④ <b>渐进式演进</b>：预留 PLM / MES / ERP 标准 API 对接点（未来升级 K3 Cloud 或替换为用友 U9C 时平滑迁移）。
+    </blockquote>
+
+    <h3>8. 实施路线图（三阶段，总周期 ≤6 个月）</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>阶段</th><th>周期</th><th>关键交付物</th><th>成功标志</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Phase 1<br>PoC 验证</b></td><td>第 1-6 周</td>
+            <td>知识中枢 MVP（图纸 / SOP / ISO 条款上传 + 语义搜索）；订单捕手 PoC（抓取 2 家客户邮件 + 1 个网页）；对账精灵 PoC（匹配 1 家银行 1 周流水）</td>
+            <td>3 大核心 Agent 真实业务场景准确率 ≥90%，获业务部门签字确认</td>
+          </tr>
+          <tr>
+            <td><b>Phase 2<br>MVP 上线</b></td><td>第 7-14 周</td>
+            <td>全功能平台部署（含全部 5 大 Agent）；与 K3 / 邮箱 / 网页系统完成集成；全员培训 + 10 名种子用户认证</td>
+            <td>生管 / 会计 / 品质 3 部门核心流程 100% 线上化，手工操作减少 ≥70%</td>
+          </tr>
+          <tr>
+            <td><b>Phase 3<br>规模推广</b></td><td>第 15-18 周</td>
+            <td>全员上线 + 权限配置；知识库存量迁移（图纸 500+ 份、SOP / 制度 200+ 份）；ISO 数字证据包生成指南</td>
+            <td>管理层驾驶舱正式启用；通过 1 次模拟内审（平台自动生成证据链）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <blockquote><b>关键保障</b>：每阶段设"双周冲刺评审会"，由客户方总经理 + IT 负责人 + 业务骨干联合验收。</blockquote>
+
+    <h3>9. 行业参考与案例（来源标注）</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>参考资料</th><th>关键启示</th><th>本方案映射点</th></tr></thead>
+        <tbody>
+          <tr><td><b>NIST / ISA-95 / ISO 标准体系</b>（王柏村 2021）</td><td>"制造金字塔"分层集成（设备 → SCADA → MES → ERP → 供应链），标准是互操作基石</td><td>Agent 平台位于"MES/ERP 之上、业务协同层"，通过 Excel 桥接适配 K3（ERP 层），为未来对接 MES 预留 OPC UA / MT Connect 接口</td></tr>
+          <tr><td><b>数字孪生与西门子 Teamcenter 实践</b>（吴雁 2021）</td><td>多学科协同需统一数据模型与知识管理平台</td><td>"图谱智搜 Agent"构建企业级轻量数字孪生基座，图纸 / BOM / 工艺 / 设备状态 / 维修记录关联为知识图谱</td></tr>
+          <tr><td><b>知识图谱在智能制造的应用</b>（张栋豪 2021）</td><td>需具备全生命周期数据、场景驱动、高可解释性、企业私有化构建</td><td>知识图谱完全基于客户自有数据，"规则 + NLP + 人工校验"混合构建，推理路径可追溯，满足 ISO 审核可解释性</td></tr>
+          <tr><td><b>上海电气数字化转型路径</b>（2023）</td><td>"设备 + 服务"转型需以数据驱动服务增值</td><td>"经营哨兵 Agent"为企业级数据服务中枢，支撑从"卖零件"向"卖交付保障"转型</td></tr>
+          <tr><td><b>《国家智能制造标准体系建设指南（2021 版）》</b>（工信部 / 国标委）</td><td>智能工厂需覆盖智能设计、生产、物流、管理、服务五大场景</td><td>5 大 Agent 全面覆盖：图谱智搜 → 智能设计；排程罗盘 → 智能生产；订单捕手 → 智能物流协同；对账精灵 → 智能管理；经营哨兵 → 智能服务决策</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>10. 待客户确认的关键问题清单（引导客户深化需求）</h3>
+    <p>为确保方案精准落地，请客户在启动会前确认以下事项（与第三节"待客户确认的关键问题"对应，此处为展开版）：</p>
+    <ul class="plain">
+      <li><b>Q1 现有系统现状</b>：K3 WISE 在用模块（财务 / 供应链 / 生产）？是否有 SQL Server 直连权限？→ 影响接入方式选择（Excel 导出 vs 数据库直连）</li>
+      <li><b>Q2 图纸与文档现状</b>：图纸总量、格式（DWG / PDF / JPG）、命名规范度？→ 影响 OCR 识别精度与知识打标策略</li>
+      <li><b>Q3 订单来源细节</b>：主要客户数量、订单载体（邮件附件 PDF / 网页表单 / EDI）？能否提供 1-2 份脱敏订单样本？→ 决定订单捕手适配复杂度</li>
+      <li><b>Q4 优先级排序</b>：秒级图纸检索 / 订单自动抓取 / 会计自动对账 / 智能排程 / 经营实时可视？→ 确保 Phase 1 PoC 聚焦最高价值点</li>
+      <li><b>Q5 预算与周期预期</b>：整体预算范围（是否含硬件 / 云资源）？是否接受分阶段付费？→ 影响技术选型与商务模式</li>
+      <li><b>Q6 组织保障</b>：是否指定跨部门协调人与专职知识管理员？→ 保障知识库建设质量与进度</li>
+    </ul>
+    <div class="callout">
+      <b>下一步建议</b>：请客户于 <b>5 个工作日内</b>反馈本清单，我们将据此召开<b>需求细化工作坊</b>，输出《系统对接详细设计说明书》与《知识库迁移实施计划》，正式启动 Phase 1。
+    </div>
+
+    <!-- 签署页 -->
+    <div class="sign">
+      <h3>PRD 终版签署页</h3>
+      <p style="color:var(--ink-2)">我方承诺：本方案严格遵循 ISO 9001/27001/等保 2.0 要求，所有数据主权归属客户，平台源码可审计。</p>
+      <div class="row">
+        <div>客户方确认：<span class="blank"></span></div>
+        <div>日期：<span class="blank" style="min-width:140px"></span></div>
+      </div>
+      <div class="row">
+        <div>顾问团队：智能制造数字化转型中心</div>
+        <div>2026 年 10 月 10 日</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    本文档由<b>智能制造 AI 应用门户</b>辅助产出 · 文中案例均为可现场演示的在线系统<br>
+    <span style="font-size:13px">附注：第四节 PRD 由平台"售前方案师"智能体实测生成（知识库接地 10 条，qwen-plus），人工复核后修订占位数据。</span>
+  </footer>
+
+</div>
+</body>
+</html>
