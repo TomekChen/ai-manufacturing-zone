@@ -100,9 +100,9 @@ def test_tools_call():
     check("list_agents 200 且 isError=false",
           r.status_code == 200 and result.get("isError") is False, str(body)[:150])
     data = json.loads(result["content"][0]["text"])
-    check("content 是 JSON 文本且含三个智能体",
+    check("content 是 JSON 文本且含四个智能体",
           isinstance(data, list) and {a["id"] for a in data} ==
-          {"prd-advisor", "kb-assistant", "order-catcher"})
+          {"prd-advisor", "kb-assistant", "order-catcher", "reconciler"})
 
     # ask_knowledge_base：kb_ask_core 离线打桩（不真调 LLM）
     saved = qa.kb_ask_core

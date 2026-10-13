@@ -80,9 +80,9 @@ def test_registry():
     meta = a.meta()
     check("meta.ui=order", meta.get("ui") == "order")
     check("endpoint 指向通用 run", meta["endpoint"] == "/api/agents/order-catcher/run")
-    check("公开注册表顺序：prd → kb → order",
+    check("公开注册表顺序：prd → kb → order → recon",
           [x["id"] for x in agents.list_agents(only_live=True)] ==
-          ["prd-advisor", "kb-assistant", "order-catcher"])
+          ["prd-advisor", "kb-assistant", "order-catcher", "reconciler"])
     check("route_task：抓单任务命中 order-catcher", route_task("帮我抓一下客户邮件里的订单") is a)
     check("route_task：询盘命中", route_task("新询盘要录入") is a)
     check("route_task：prd 任务仍归 prd-advisor", route_task("写个售前方案") is get_agent("prd-advisor"))

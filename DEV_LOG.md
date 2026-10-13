@@ -1424,3 +1424,23 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 1. fetch_once 增量语义依赖"传入配置带 last_uid"——单测若每次传裸 dict(CFG) 就测不到增量路径，必须读回已存配置（读回的才是生产真实路径）；
 2. int(b"123") 在 Python 3 可用（bytes 直接转 int），IMAP 返回的 bytes uid 无需 decode；
 3. FakeConn 的 uid search 必须模拟真实语义（参数被忽略返回全部 uid 也行，但断言增量时要靠 last_uid 过滤，别把桩写成"自动增量"）。
+
+## 四十六、A9 对账助手智能体（2026-10-13）
+
+**背景**：OpenMuse 分析的优先级清单第三项（前两项 PRD 实测、订单机器人已上线）。财务月末人工逐笔核对银行流水与台账费时易漏，与订单机器人同属"制造企业运营空白"场景。目标：粘贴流水 + 台账 → AI 逐笔比对给出匹配建议 + 差异报告，**只给建议不给结论**——疑似项必须人工确认后才能入账。
+
+**实现**（agents/reconciler.py，同 order_catcher 模式，第四个 live 智能体）：
+- 入参：statement 银行流水（必填，别名 text，12000 截断）+ ledger 台账（可选，8000 截断）；无台账则只做流水侧归类（matched/suspected 留空）；
+- LLM 强制 JSON 五段输出：matched（匹配对+依据）/ suspected（疑似+原因+人工核对要点）/ unmatched_bank / unmatched_ledger（未达账双边清单）/ suggestions（建议分录，未达项写待处理不编造）；金额一律保留原文写法；
+- 置信度按**实际列表长度**计算（0.8 全平账 / 0.6 有匹配但有疑似或未达 / 0.3 无匹配）——不信任 LLM 自报的 summary 计数，首版用 summary 值被测试当场抓出；
+- 解析失败收敛 RuntimeError（502）、入参校验 ValueError（400），同 A7 契约；
+- 前端 AgentRecon.jsx（ui=recon 新弹窗类型，main.jsx 四路分流），复用 prd-* 样式零新增 CSS；触发词 ["对账","流水核对","核销","未达账","银企"]，注册表顺序 prd → kb → order → recon。
+
+**测试**：tests/test_reconciler.py 29 断言全绿（chat 桩覆盖：全平账 0.8 / 疑似 0.6 / 全未达 0.3 / 坏 JSON / 夹带文字 / 坏类型兜底 / ValueError / RuntimeError）；三个测试文件的注册表精确集合断言同步更新为四智能体；全量回归 15 文件全绿（332 pytest 式断言 + 5 个 pytest 套件）。
+
+**部署**：agents/ 整目录 COPY，两套 Dockerfile 均零改动；备份 data-preA9-20261013110834.tgz → tar（agents/+dist/）上传 → MD5 双端一致 → nohup compose build → 冒烟（home 200、/api/agents 四智能体、空流水 400、外网 200、日志干净）。
+
+**坑与教训**：
+1. 触发词是子串匹配，测试文案要含**连续**触发词——"对一下账"不命中"对账"，dispatch 测试两次才通过（A7 的"别用短英文串"教训的中文版）；
+2. 置信度这类平台自算的指标不要采信 LLM 返回的计数，一律从结构化列表重算——测试用"列表已清空但 summary 还是旧值"的桩设计正好抓到这点；
+3. vite 多次构建会在 dist/assets/ 残留旧 hash 文件（index.html 只引用新的），无功能影响，可在某次部署时顺手清一次。
