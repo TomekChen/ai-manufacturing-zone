@@ -164,6 +164,31 @@ def test_share_page(sid):
           and "&lt;script&gt;" in html2)
 
 
+def test_share_view_stats(sid):
+    print("\n[分享页访问统计]")
+    clear_bucket()
+    before = 0
+    for s in read_file():
+        if s.get("id") == sid:
+            before = int(s.get("share_views") or 0)
+    c.get("/s/%s" % sid)
+    c.get("/s/%s" % sid)
+    rows = read_file()
+    sess = next(s for s in rows if s.get("id") == sid)
+    check("两次访问计数 +2", int(sess.get("share_views") or 0) == before + 2,
+          str(sess.get("share_views")))
+    check("记录 last_viewed", bool(sess.get("last_viewed")))
+    clear_bucket()
+    check("404 不计数", c.get("/s/not-exist-xyz").status_code == 404)
+    rows2 = read_file()
+    ghost = next((s for s in rows2 if s.get("id") == "not-exist-xyz"), None)
+    check("404 未落盘新记录", ghost is None)
+    r = c.get("/api/admin/prd-sessions", headers=_admin_headers()).get_json() or []
+    row = next((x for x in r if x.get("id") == sid), None)
+    check("管理端列表回显 share_views",
+          row is not None and int(row.get("share_views") or 0) == before + 2)
+
+
 def test_admin_list(sid):
     print("\n[后台会话列表]")
     r = c.get("/api/admin/prd-sessions")
@@ -294,6 +319,7 @@ if __name__ == "__main__":
     test_get_session(sid)
     test_validation()
     test_share_page(sid)
+    test_share_view_stats(sid)
     test_admin_list(sid)
     test_ingest(sid)
     test_expiry()

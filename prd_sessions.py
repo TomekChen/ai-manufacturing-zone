@@ -126,6 +126,8 @@ def _admin_prd_sessions():
             "version_count": len(versions),
             "ingested": bool(s.get("ingested")),
             "expired": _is_expired(s),
+            "share_views": int(s.get("share_views") or 0),
+            "last_viewed": s.get("last_viewed"),
         })
     return jsonify(rows)
 
@@ -262,6 +264,15 @@ def prd_session_share(sid):
         return jsonify({"error": "会话不存在"}), 404
     if _is_expired(sess):
         return Response(_SHARE_EXPIRED, mimetype="text/html", status=410)
+    # 访问统计：只记成功打开（404/410 不计），计数随会话账本持久化
+    sess["share_views"] = int(sess.get("share_views") or 0) + 1
+    sess["last_viewed"] = datetime.now().isoformat(timespec="seconds")
+    sessions = _load_json(_sessions_file(), [])
+    for i, s in enumerate(sessions):
+        if s.get("id") == sid:
+            sessions[i] = sess
+            _save_json(_sessions_file(), sessions)
+            break
     parts = []
     for v in reversed(sess.get("versions", [])):
         res = v.get("result") or {}

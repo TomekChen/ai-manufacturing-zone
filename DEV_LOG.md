@@ -1465,3 +1465,13 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 1. limiter 装饰器包全视图会让 404/400/503 这类**无效请求也占限流额度**——测试跑到第 6 次请求被 429 误伤才暴露；"先校验后限流"的端点用手写 rate_limited（core.limiter docstring 早写了这条，这次真踩到）；
 2. 服务器 Dockerfile 显式 COPY 清单第三次踩中（R5/A8 之后）：新增后端模块必须在两套 Dockerfile 各补一行，部署前核对清单应固定为 SOP；
 3. 测试桩隔离要包住**整个**提交调用——只在断言段 stub、提交段走真 agent，会因真实 agent 检查 API key 而 502（StubAgent 上下文管理器把 run 替换 + has_api_key 打桩都收进 with 块）。
+
+## 四十八、小项批：分享页访问统计 + 知网论文降级 + WeKnora 掉线恢复（2026-10-15）
+
+**分享页访问统计**：/s/<sid> 成功打开时计数 +1 并记 last_viewed（404/410 不计），随会话账本持久化；管理端列表回显 share_views/last_viewed，AdminSessions.jsx 加「分享访问」列。tests/test_prd_sessions.py +5 断言（两次访问 +2 / 404 不计不落盘 / 管理端回显），54→59，全量 16 文件 370 绿。
+
+**知网论文降级内部参考**：WeKnora 17 篇文档中 7 篇知网论文（01–07 编号 PDF，版权不属本站）经清单核对后从公开库删除，删除前元数据备份服务器 backups/weknora_docs_pre-cnki-downgrade-20261015.json；公开库剩 10 篇合规语料（政策公文 8 + 开源文档 2）。收录原则固化到 docs/corpus/README.md（公开层/内部参考层/收录三条原则，国标全文不入库）。
+
+**事故：WeKnora 容器掉线**：浏览器验证中发现公开知识问答 502——weknora-app/docreader 两容器未运行（docker ps 无记录，疑似此前某次维护 docker compose down 后未起）。docker compose up -d 拉起，健康后问答恢复 200；两容器 restart 策略固化为 unless-stopped 防复发。教训：门户问答强依赖 WeKnora，其容器不在本项目 compose 管辖内，巡检项应包含 weknora 容器状态（portal 心跳目前只探本项目服务）。
+
+**待人工点验**：管理后台「方案会话」删除按钮（无凭据不做登录自动化）——登录后删一条测试会话，确认列表移除、分享页 404。

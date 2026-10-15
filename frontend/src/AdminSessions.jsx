@@ -93,7 +93,7 @@ export default function AdminSessions({ token }) {
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
-              <tr><th>最近更新</th><th>客户会话</th><th>创建时间</th><th>版本数</th><th>操作</th></tr>
+              <tr><th>最近更新</th><th>客户会话</th><th>创建时间</th><th>版本数</th><th>分享访问</th><th>操作</th></tr>
             </thead>
             <tbody>
               {items.map(s => (
@@ -104,6 +104,9 @@ export default function AdminSessions({ token }) {
                   <td>
                     <span className="status-pill online">v1–v{s.version_count}</span>
                     {s.expired && <span className="status-pill offline" style={{ marginLeft: 6 }}>分享已过期</span>}
+                  </td>
+                  <td className="muted" style={{ whiteSpace: 'nowrap' }}>
+                    {s.share_views || 0} 次{(s.last_viewed || '') && ` · ${(s.last_viewed || '').replace('T', ' ')}`}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <a className="btn btn-ghost btn-sm" href={`/s/${s.id}`} target="_blank" rel="noreferrer">
