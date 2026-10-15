@@ -10,6 +10,8 @@ export default function AgentOrder({ agent, onClose }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null);
+  const [approvalMsg, setApprovalMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/order-catcher/run';
 
@@ -34,6 +36,26 @@ export default function AgentOrder({ agent, onClose }) {
       setLoading(false);
     }
   }, [text, loading, endpoint]);
+
+  // A10 审批留痕：AI 工单先审后用——原始入参提交后端跑一遍并落 pending 审批单
+  const submitApproval = async () => {
+    if (submitting) return;
+    setSubmitting(true); setApprovalMsg('');
+    try {
+      const res = await fetch('/api/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agent?.id || 'order-catcher', payload: { text } }),
+      });
+      if (!res.ok) { setApprovalMsg('提交失败：' + await readError(res)); return; }
+      const d = await res.json();
+      setApprovalMsg(`已提交人工审批（编号 ${d.id}），管理后台「审批留痕」可跟进`);
+    } catch (e) {
+      setApprovalMsg('网络错误：' + (e.message || e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const order = result || {};
   const products = order.products || [];
@@ -87,7 +109,12 @@ export default function AgentOrder({ agent, onClose }) {
                 <span className="prd-badge muted">
                   置信度：{typeof result.confidence === 'number' ? Math.round(result.confidence * 100) + '%' : '—'}
                 </span>
+                <button className="btn btn-sm btn-ghost" disabled={submitting}
+                        onClick={submitApproval}>
+                  {submitting ? '提交中…' : '提交人工审批'}
+                </button>
               </div>
+              {approvalMsg && <div style={{ margin: '8px 0', fontSize: 13, color: '#15803d' }}>{approvalMsg}</div>}
               {missing.length > 0 && (
                 <div className="prd-sources" style={{ color: '#b45309' }}>
                   ⚠️ 以下信息原文未提供，建议回询客户以免漏单：

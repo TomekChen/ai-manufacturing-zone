@@ -41,6 +41,8 @@ export default function AgentRecon({ agent, onClose }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null);
+  const [approvalMsg, setApprovalMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/reconciler/run';
 
@@ -65,6 +67,29 @@ export default function AgentRecon({ agent, onClose }) {
       setLoading(false);
     }
   }, [statement, ledger, loading, endpoint]);
+
+  // A10 审批留痕：对账建议先审后用——原始入参提交后端跑一遍并落 pending 审批单
+  const submitApproval = async () => {
+    if (submitting) return;
+    setSubmitting(true); setApprovalMsg('');
+    try {
+      const res = await fetch('/api/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agent?.id || 'reconciler',
+          payload: { statement, ledger },
+        }),
+      });
+      if (!res.ok) { setApprovalMsg('提交失败：' + await readError(res)); return; }
+      const d = await res.json();
+      setApprovalMsg(`已提交人工审批（编号 ${d.id}），管理后台「审批留痕」可跟进`);
+    } catch (e) {
+      setApprovalMsg('网络错误：' + (e.message || e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const r = result || {};
   const matched = r.matched || [];
@@ -129,7 +154,12 @@ export default function AgentRecon({ agent, onClose }) {
                 <span className="prd-badge muted">
                   置信度：{confidenceBadge}
                 </span>
+                <button className="btn btn-sm btn-ghost" disabled={submitting}
+                        onClick={submitApproval}>
+                  {submitting ? '提交中…' : '提交人工审批'}
+                </button>
               </div>
+              {approvalMsg && <div style={{ margin: '8px 0', fontSize: 13, color: '#15803d' }}>{approvalMsg}</div>}
               {(summary.matched_count !== undefined || matched.length > 0) && (
                 <div className="prd-sources">
                   完全匹配 {summary.matched_count ?? matched.length} 笔 · 疑似 {summary.suspected_count ?? suspected.length} 笔 · 未达 {summary.unmatched_count ?? (unmatchedBank.length + unmatchedLedger.length)} 笔

@@ -17,6 +17,7 @@ import DemoBooking from './DemoBooking';
 import AdminBookings from './AdminBookings';
 import AdminSessions from './AdminSessions';
 import AdminOrderMail from './AdminOrderMail';
+import AdminApproval from './AdminApproval';
 
 import { API_BASE, readError, apiGet, apiPost, apiDelete, apiUpload } from './api';
 
@@ -381,6 +382,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           <button className={activeTab === 'bookings' ? 'active' : ''} onClick={() => setActiveTab('bookings')}>预约演示</button>
           <button className={activeTab === 'sessions' ? 'active' : ''} onClick={() => setActiveTab('sessions')}>方案会话</button>
           <button className={activeTab === 'ordermail' ? 'active' : ''} onClick={() => setActiveTab('ordermail')}>订单捕获</button>
+          <button className={activeTab === 'approval' ? 'active' : ''} onClick={() => setActiveTab('approval')}>审批留痕</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
         <div className="admin-body">
@@ -428,6 +430,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           {activeTab === 'bookings' && <AdminBookings token={token} />}
           {activeTab === 'sessions' && <AdminSessions token={token} />}
           {activeTab === 'ordermail' && <AdminOrderMail token={token} />}
+          {activeTab === 'approval' && <AdminApproval token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">
               <label>站点标题</label>

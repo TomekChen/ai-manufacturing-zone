@@ -1444,3 +1444,24 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 1. 触发词是子串匹配，测试文案要含**连续**触发词——"对一下账"不命中"对账"，dispatch 测试两次才通过（A7 的"别用短英文串"教训的中文版）；
 2. 置信度这类平台自算的指标不要采信 LLM 返回的计数，一律从结构化列表重算——测试用"列表已清空但 summary 还是旧值"的桩设计正好抓到这点；
 3. vite 多次构建会在 dist/assets/ 残留旧 hash 文件（index.html 只引用新的），无功能影响，可在某次部署时顺手清一次。
+
+## 四十七、A10 审批/留痕中间层（2026-10-15）
+
+**背景**：OpenMuse 分析的优先级清单第四项（学 durable tasks 模式，不搬码）。此前智能体产出（订单工单/对账建议）只能看不能用——没有"AI 建议 → 人工批准 → 落库执行"的闭环，ISO 可追溯停留在话术。目标：公开端把智能体产出提交为待审批事项，管理端批准/驳回，全流程 append-only 留痕。
+
+**实现**：
+- 后端 approval.py（Blueprint+注入，同 prd_sessions/order_mail 模式）：公开 `POST /api/approvals {agent_id, payload}`（服务端跑 agent.run，产出与原始 payload 一并存档）；管理端 GET 列表（瘦行不含 payload/result/trail，最新在前 cap 200）/ GET 详情 / approve / reject；存储 data/approvals.json，留最近 500 条；
+- 留痕设计：trail append-only（submitted → approved/rejected 各一条），已决事项再决策返回 409 已决，**无删除接口**（审计不可变）；驳回必须填理由（400），驳回理由入 trail；每条记录含 confidence、source、decided_at；
+- 限流语义修正：公开提交 5 次/小时/IP，且**先校验后限流**——agent 404/不可用不占额度（agents_api 同款手写 rate_limited，不用 limiter 装饰器包全视图）；
+- 前端：AgentOrder.jsx / AgentRecon.jsx 结果栏加「提交人工审批」按钮（成功绿字提示编号），管理后台新增「审批留痕」页签 AdminApproval.jsx（列表 + 展开详情：result JSON、trail 时间线、驳回弹窗必填理由）。
+
+**测试**：tests/test_approval.py 33 断言全绿（StubAgent 桩隔离真实 LLM；覆盖提交/404/400/503/agent 异常不落账/瘦列表/详情 trail/批准后 409 不可变/驳回空理由 400/限流 404 不占额度+第 6 次 429/_summarize 单测）；全量回归 16 文件全绿（365 pytest 式断言 + 5 个 pytest 套件）。
+
+**部署**：备份 data-preA10-20261015104508.tgz → tar（approval.py+app.py+dist/）→ MD5 双端一致 → **服务器 Dockerfile 第 9 行显式 COPY 清单补 source/approval.py**（R5 教训重演，这次部署前主动抓住，备份 Dockerfile.preA10）→ 容器重建 → 冒烟（home 200、/api/admin/approvals 401、幽灵 agent 404、空 payload 400、日志干净）。
+
+**浏览器 E2E**（线上真 LLM）：订单机器人抽取真实订单 → 结果置信度 60%、缺 order_no 提示 → 点「提交人工审批」→ 绿字"已提交人工审批（编号 5e881ecd7f613a6f）" → 服务器 data/approvals.json 落库核对：status=pending、trail[0].action=submitted、payload 留档。
+
+**坑与教训**：
+1. limiter 装饰器包全视图会让 404/400/503 这类**无效请求也占限流额度**——测试跑到第 6 次请求被 429 误伤才暴露；"先校验后限流"的端点用手写 rate_limited（core.limiter docstring 早写了这条，这次真踩到）；
+2. 服务器 Dockerfile 显式 COPY 清单第三次踩中（R5/A8 之后）：新增后端模块必须在两套 Dockerfile 各补一行，部署前核对清单应固定为 SOP；
+3. 测试桩隔离要包住**整个**提交调用——只在断言段 stub、提交段走真 agent，会因真实 agent 检查 API key 而 502（StubAgent 上下文管理器把 run 替换 + has_api_key 打桩都收进 with 块）。
