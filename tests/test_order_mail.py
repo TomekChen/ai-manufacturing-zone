@@ -134,6 +134,86 @@ def clear_data():
             os.remove(p)
 
 
+def make_raw_att(mid, atts, body="见附件"):
+    """带附件的邮件（atts: [(filename, bytes)]），正文故意写得极简。"""
+    m = EmailMessage()
+    m["From"] = "客户李工 <buyer@example.com>"
+    m["To"] = "sales@example.com"
+    m["Subject"] = "订单 PO-2026-88（附件版）"
+    if mid:
+        m["Message-ID"] = mid
+    m.set_content(body)
+    for fname, data in atts:
+        m.add_attachment(data, maintype="application", subtype="octet-stream",
+                         filename=fname)
+    return m.as_bytes()
+
+
+def test_attachments():
+    print("\n[附件解析 A8 增强]")
+    import io
+    import openpyxl
+    from email import policy
+    from email.parser import BytesParser
+
+    clear_data()
+
+    # 单元层：xlsx 附件 → 文本；图片附件 → OCR 提示
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["品名", "数量"])
+    ws.append(["精密轴", 100])
+    buf = io.BytesIO()
+    wb.save(buf)
+    raw = make_raw_att("<att-1@x>", [("order.xlsx", buf.getvalue())])
+    msg = BytesParser(policy=policy.default).parsebytes(raw)
+    text, notes = om._attachment_text(msg)
+    check("xlsx 附件解析出表格", "精密轴" in text and "100" in text, text[:60])
+    check("xlsx 无 notes", notes == [])
+
+    raw2 = make_raw_att("<att-2@x>", [("scan.png", b"\x89PNG fake")], body="")
+    _, notes2 = om._attachment_text(BytesParser(policy=policy.default).parsebytes(raw2))
+    check("图片附件提示 OCR 暂不支持",
+          len(notes2) == 1 and "OCR 暂不支持" in notes2[0], str(notes2))
+
+    # 扫描件 PDF（无文字层）→ OCR 提示
+    try:
+        from pypdf import PdfWriter
+        pw = PdfWriter()
+        pw.add_blank_page(width=612, height=792)
+        pbuf = io.BytesIO()
+        pw.write(pbuf)
+        raw3 = make_raw_att("<att-3@x>", [("scan.pdf", pbuf.getvalue())])
+        _, notes3 = om._attachment_text(BytesParser(policy=policy.default).parsebytes(raw3))
+        check("无文字层 PDF 提示 OCR", len(notes3) == 1 and "OCR" in notes3[0], str(notes3))
+    except ImportError:
+        print("  skip- pypdf 不在本地环境，跳过 PDF 分支")
+
+    # 端到端：正文空壳 + xlsx 附件 → 附件文本进抽取入参，捕获 status=new
+    seen_payload = {}
+    class RecordAgent:
+        available = lambda self: True
+        def run(self, payload):
+            seen_payload.update(payload)
+            return {"ok": True, "agent_id": "order-catcher", "result": dict(GOOD_ORDER),
+                    "confidence": 0.8, "refs": [], "mode": "order"}
+
+    om._connect = lambda cfg: FakeConn({1: raw})
+    r = om.fetch_once(dict(CFG), agent=RecordAgent())
+    caps = om._load_json(om._captures_file(), [])
+    check("附件邮件捕获 new", r["new"] == 1 and caps[0]["status"] == "new", str(r))
+    check("附件文本进入抽取入参", "精密轴" in seen_payload.get("text", ""),
+          seen_payload.get("text", "")[:80])
+
+    # 端到端：只有图片附件 → skipped，note 带附件说明（不丢信）
+    om._connect = lambda cfg: FakeConn({2: raw2})
+    r2 = om.fetch_once(dict(CFG), agent=RecordAgent())
+    caps2 = om._load_json(om._captures_file(), [])
+    skip = [c for c in caps2 if c.get("status") == "skipped"]
+    check("图片附件邮件 skipped 且 note 说明", len(skip) == 1 and "OCR" in skip[0].get("note", ""),
+          str(skip)[:120])
+
+
 CFG = {"host": "imap.example.com", "port": 993, "user": "sales@example.com",
        "password": "secret", "folder": "INBOX", "ssl": True, "enabled": True}
 
@@ -326,6 +406,7 @@ def test_endpoints():
 
 if __name__ == "__main__":
     test_fetch_once()
+    test_attachments()
     test_endpoints()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

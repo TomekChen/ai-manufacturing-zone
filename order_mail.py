@@ -15,6 +15,7 @@ app.py 装配时 init(data_dir, load_json, save_json, require_admin) 注入设�
 """
 import hashlib
 import imaplib
+import io
 import os
 import re
 import secrets
@@ -34,6 +35,8 @@ POLL_INTERVAL_SEC = 300      # 后台线程巡检周期（enabled 才真正连�
 FETCH_BATCH = 50             # 单次最多处理多少封
 MAX_BODY_CHARS = 12000       # 与订单机器人 run() 的截断上限一致
 MAX_CAPTURES = 500
+MAX_ATTACHMENTS = 5          # 单封邮件最多解析几个附件
+MAX_ATTACH_BYTES = 5 * 1024 * 1024  # 单个附件大小上限（5MB）
 
 # 依赖注入槽（app.py 装配时填充）
 _data_dir = None
@@ -134,6 +137,65 @@ def _body_text(msg):
         return ""
 
 
+def _attachment_text(msg):
+    """附件解析（A8 增强）：PDF 文字层 / xlsx / csv / txt → 文本；不支持格式记提示不报错。
+
+    返回 (text, notes)：text 拼进抽取正文，notes 逐条说明为什么没解析出内容。
+    """
+    texts, notes = [], []
+    try:
+        atts = list(msg.iter_attachments())
+    except Exception:
+        atts = []
+    for att in atts[:MAX_ATTACHMENTS]:
+        name = att.get_filename() or "attachment"
+        lower = name.lower()
+        payload = att.get_payload(decode=True)
+        if not payload:
+            continue
+        if len(payload) > MAX_ATTACH_BYTES:
+            notes.append("%s（超过 5MB 未解析）" % name)
+            continue
+        try:
+            if lower.endswith(".pdf"):
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(payload))
+                t = "\n".join((p.extract_text() or "") for p in reader.pages[:20])
+                if t.strip():
+                    texts.append("【附件 %s】\n%s" % (name, t.strip()))
+                else:
+                    notes.append("%s（扫描件 PDF 无文字层，OCR 暂不支持）" % name)
+            elif lower.endswith((".xlsx", ".xlsm")):
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+                try:
+                    ws = wb.worksheets[0]
+                    lines = ["\t".join("" if c is None else str(c) for c in row).strip()
+                             for row in ws.iter_rows(values_only=True)]
+                finally:
+                    wb.close()
+                t = "\n".join(line for line in lines if line)
+                if t:
+                    texts.append("【附件 %s】\n%s" % (name, t))
+            elif lower.endswith((".csv", ".txt")):
+                t = None
+                for enc in ("utf-8-sig", "gbk", "utf-8", "latin-1"):
+                    try:
+                        t = payload.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+                if t and t.strip():
+                    texts.append("【附件 %s】\n%s" % (name, t.strip()))
+            elif lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                notes.append("%s（图片附件，OCR 暂不支持）" % name)
+            else:
+                notes.append("%s（暂不支持该格式）" % name)
+        except Exception as e:
+            notes.append("%s（解析失败：%s）" % (name, str(e)[:60]))
+    return "\n".join(texts), notes
+
+
 def _dedup_key(msg, raw_headers):
     mid = (msg.get("Message-ID") or "").strip()
     if mid:
@@ -158,6 +220,14 @@ def test_connection(cfg):
             conn.logout()
         except Exception:
             pass
+
+
+def append_capture(cap):
+    """捕获账本写入（公共入口）：order_mail 轮询与 web_capture 网页抓单共用，留最近 500 条。"""
+    captures = _load_json(_captures_file(), []) or []
+    captures.append(cap)
+    _save_json(_captures_file(), captures[-MAX_CAPTURES:])
+    return cap
 
 
 def fetch_once(cfg=None, agent=None, limit=FETCH_BATCH):
@@ -215,6 +285,10 @@ def fetch_once(cfg=None, agent=None, limit=FETCH_BATCH):
                 continue
             seen.add(dedup)
             body = _body_text(msg)[:MAX_BODY_CHARS]
+            # 附件解析（A8 增强）：正文为空或附件带单据时，附件文本拼进抽取正文
+            att_text, att_notes = _attachment_text(msg)
+            if att_text:
+                body = ((body + "\n" if body.strip() else "") + att_text)[:MAX_BODY_CHARS]
             cap = {
                 "id": secrets.token_hex(8),
                 "ts": datetime.now().isoformat(timespec="seconds"),
@@ -224,8 +298,10 @@ def fetch_once(cfg=None, agent=None, limit=FETCH_BATCH):
                 "uid": uid,
             }
             if not body.strip():
-                cap.update({"status": "skipped", "confidence": 0,
-                            "note": "正文无可抽取文本（可能只有附件/图片）"})
+                note = "正文无可抽取文本（可能只有附件/图片）"
+                if att_notes:
+                    note += "；" + "；".join(att_notes)
+                cap.update({"status": "skipped", "confidence": 0, "note": note})
             else:
                 try:
                     result = agent.run({"text": body})

@@ -1487,3 +1487,17 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **坑**：openpyxl 的 Workbook 不支持 with 上下文（和常见的误记相反），用 try/finally close()；只有表头行的 CSV 会把表头当数据行返回——测试改为真空文件验证"没有可读取的数据行"。
 
 **ingest.py 双 bug 修复**：①URLS 打开的路径是字符串字面量（os.path.join 整段被写进引号里），运行即 FileNotFoundError；②账本读取 r["url"] 对缺键记录直接 KeyError——改 .get + isinstance 过滤。此脚本只在采集时容器内手动跑，改动无需部署。
+
+## 五十、A8/A9 增强批收官：邮件附件抽取 + 分享统计图表 + 网页抓单（2026-10-17）
+
+**背景**：老板说"把候选都做了"，一口气清掉 DEV_LOG 记录的全部三项候选增强。
+
+**① 邮件附件抽取**（A8 增强）：order_mail.py 新增 _attachment_text(msg)——IMAP 拉信时附件一并解析：PDF 用 pypdf 抽前 20 页文字层（空白即判定扫描件，标注"OCR 暂不支持"），xlsx/xlsm 用 openpyxl（read_only+data_only），csv/txt 四编码链（utf-8-sig/gbk/utf-8/latin-1），图片/超 5MB/解析失败均给明确 note 不炸轮询；附件文本并入正文喂订单机器人（共享 12000 字符截断）。上限 5 附件 / 5MB 防滥用。tests/test_order_mail.py +9 断言（40→45）。
+
+**② 分享访问统计图表化**（小项②）：prd_sessions.py 新增 GET /api/admin/share-stats——近 30 天按日序列 + Top5 热门方案（删除会话显示"（已删除）"），数据落 data/share_stats.json（by_day/by_sid 双维度）；AdminSessions.jsx 加 SVG 柱状图（14 天窗口、悬停看数、30 天总量、Top3 🔥 榜）。tests/test_prd_sessions.py +6（59→65）。
+
+**③ 网页抓单**（A8 增强③，浏览器 worker 思路）：客户订单只在他们自己的门户网站时，管理端配置网页来源 → 抓取渲染文本 → 复用订单机器人抽取 → 复用捕获账本（source=web）。新模块 web_capture.py（Blueprint+注入，同 order_mail 模式）：抓取双引擎——环境装了 playwright 则真浏览器渲染（JS-SPA 门户可抓），缺省 requests+BeautifulSoup（服务端渲染门户零新增依赖），engine 字段回显；内容未变（sha256 指纹）不重复入账；管理后台新「网页抓单」页签（AdminWebCapture.jsx：来源 CRUD + 立即抓取 + 状态回显）。捕获账本写入抽公共函数 order_mail.append_capture（两个 worker 共用，最近 500 条）。主镜像不装 Playwright（chromium ~400MB，需要 JS-SPA 抓取时按需 pip install playwright && playwright install chromium）。tests/test_web_capture.py 新增 29 断言。
+
+**质量**：全量 17 文件 477 断言绿；前端构建通过。
+
+**坑**：网页抓单测试里注入 wc._data_dir 不够——账本经 order_mail.append_capture 写入，测试须同时把 om._data_dir 重定向到临时目录（依赖注入的模块边界在测试里的体现）。

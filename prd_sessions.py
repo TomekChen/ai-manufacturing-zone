@@ -45,6 +45,10 @@ def init(data_dir, load_json_fn, save_json_fn, rate_limited_fn, require_admin_de
                     "api_admin_prd_session_delete",
                     view_func=require_admin_dec(_api_prd_session_delete),
                     methods=["DELETE"])
+    bp.add_url_rule("/api/admin/share-stats",
+                    "api_admin_share_stats",
+                    view_func=require_admin_dec(_api_share_stats),
+                    methods=["GET"])
 
 
 import json  # noqa: E402
@@ -55,6 +59,39 @@ import html  # noqa: E402
 
 def _sessions_file():
     return os.path.join(_data_dir, "prd_sessions.json")
+
+
+def _stats_file():
+    """分享访问按天记账（小项：统计图表化）：{"by_day": {date: n}, "by_sid": {sid: n}}"""
+    return os.path.join(_data_dir, "share_stats.json")
+
+
+def _bump_share_stats(sid):
+    stats = _load_json(_stats_file(), {}) or {}
+    if not isinstance(stats, dict):
+        stats = {}
+    by_day = stats.get("by_day") if isinstance(stats.get("by_day"), dict) else {}
+    by_sid = stats.get("by_sid") if isinstance(stats.get("by_sid"), dict) else {}
+    day = datetime.now().strftime("%Y-%m-%d")
+    by_day[day] = int(by_day.get(day) or 0) + 1
+    by_sid[sid] = int(by_sid.get(sid) or 0) + 1
+    _save_json(_stats_file(), {"by_day": by_day, "by_sid": by_sid})
+
+
+def _share_stats_report(days=30, top_n=5):
+    """管理端图表数据：最近 N 天每日访问 + 最热会话（带标题，已删除会话标题留空）。"""
+    stats = _load_json(_stats_file(), {}) or {}
+    by_day = stats.get("by_day") if isinstance(stats.get("by_day"), dict) else {}
+    by_sid = stats.get("by_sid") if isinstance(stats.get("by_sid"), dict) else {}
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        series.append({"date": day, "views": int(by_day.get(day) or 0)})
+    titles = {s.get("id"): s.get("title") for s in _load_json(_sessions_file(), [])}
+    top = sorted(by_sid.items(), key=lambda kv: -kv[1])[:top_n]
+    return {"days": series,
+            "top": [{"sid": sid, "title": titles.get(sid) or "（已删除）", "views": n}
+                    for sid, n in top]}
 
 
 def _is_expired(sess):
@@ -130,6 +167,11 @@ def _admin_prd_sessions():
             "last_viewed": s.get("last_viewed"),
         })
     return jsonify(rows)
+
+
+def _api_share_stats():
+    """分享访问图表数据（最近 30 天 + 热门会话 Top5）。"""
+    return jsonify(_share_stats_report())
 
 
 def _api_prd_session_delete(sid):
@@ -267,6 +309,7 @@ def prd_session_share(sid):
     # 访问统计：只记成功打开（404/410 不计），计数随会话账本持久化
     sess["share_views"] = int(sess.get("share_views") or 0) + 1
     sess["last_viewed"] = datetime.now().isoformat(timespec="seconds")
+    _bump_share_stats(sid)
     sessions = _load_json(_sessions_file(), [])
     for i, s in enumerate(sessions):
         if s.get("id") == sid:

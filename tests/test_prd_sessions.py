@@ -189,6 +189,29 @@ def test_share_view_stats(sid):
           row is not None and int(row.get("share_views") or 0) == before + 2)
 
 
+def test_share_stats_chart(sid):
+    print("\n[分享访问图表数据]")
+    import prd_sessions as ps
+    clear_bucket()
+    # /s/ 打开会按天+按会话双记账（share_stats.json）
+    c.get("/s/%s" % sid)
+    stats = ps._load_json(ps._stats_file(), {})
+    today = datetime.now().strftime("%Y-%m-%d")
+    check("按天记账 today +1", int(stats["by_day"].get(today) or 0) >= 1, str(stats)[:120])
+    check("按会话记账 sid +1", int(stats["by_sid"].get(sid) or 0) >= 1)
+
+    r401 = c.get("/api/admin/share-stats")
+    check("share-stats 未带 token 401", r401.status_code == 401)
+    r = c.get("/api/admin/share-stats", headers=_admin_headers()).get_json() or {}
+    check("share-stats 30 天序列", len(r.get("days") or []) == 30)
+    check("序列含今天且计数正确",
+          (r["days"][-1]["date"] == today
+           and r["days"][-1]["views"] >= int(stats["by_day"].get(today) or 0)))
+    top = r.get("top") or []
+    check("热门会话含本会话标题", any(t.get("sid") == sid and t.get("title") for t in top),
+          str(top)[:120])
+
+
 def test_admin_list(sid):
     print("\n[后台会话列表]")
     r = c.get("/api/admin/prd-sessions")
@@ -320,6 +343,7 @@ if __name__ == "__main__":
     test_validation()
     test_share_page(sid)
     test_share_view_stats(sid)
+    test_share_stats_chart(sid)
     test_admin_list(sid)
     test_ingest(sid)
     test_expiry()
