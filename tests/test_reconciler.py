@@ -170,9 +170,69 @@ def test_http():
           "127.0.0.1" in app._ask_limits.get("agent_reconciler", {}))
 
 
+def test_upload():
+    print("\n[reconciler 文件上传解析]")
+    import io
+    import openpyxl
+
+    def _clear():
+        app._ask_limits.pop("recon_upload", None)
+
+    c = app.app.test_client()
+
+    # 单元层：CSV utf-8-sig（Excel 导出默认带 BOM）
+    raw = "日期,收付,对方,金额\n2026-10-08,收,华阳汽车零部件,50000.00\n".encode("utf-8-sig")
+    text, rows = rc.parse_upload("流水.csv", raw)
+    check("CSV utf-8-sig 解析", "华阳汽车零部件" in text and rows == 2, text[:60])
+    check("CSV 行内以制表符连接", "收\t华阳汽车零部件" in text)
+
+    # 单元层：GBK（老网银常见）
+    text, _ = rc.parse_upload("bank.csv", "日期,金额\n10-08,50000".encode("gbk"))
+    check("CSV GBK 解析", "10-08" in text)
+
+    # 单元层：xlsx
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["日期", "对方", "金额"])
+    ws.append(["2026-10-08", "华阳", 50000])
+    buf = io.BytesIO()
+    wb.save(buf)
+    text, rows = rc.parse_upload("台账.xlsx", buf.getvalue())
+    check("XLSX 解析", "华阳" in text and "50000" in text and rows == 2, text[:60])
+
+    # 单元层：拒绝类型 / 空表
+    for fn, data, msg in [("订单.pdf", b"%PDF-1.4", "只支持 CSV / XLSX"),
+                          ("空.csv", b"", "没有可读取的数据行")]:
+        try:
+            rc.parse_upload(fn, data)
+            check("unit %s 应抛 ValueError" % fn, False)
+        except ValueError as e:
+            check("unit %s 400 语义" % fn, msg in str(e), str(e))
+
+    # HTTP：无文件 400 / 坏类型 400 / 正常上传 200
+    _clear()
+    r = c.post("/api/agents/reconciler/upload", data={})
+    check("无文件 400", r.status_code == 400)
+    r = c.post("/api/agents/reconciler/upload",
+               data={"file": (io.BytesIO(b"abc"), "x.pdf")},
+               content_type="multipart/form-data")
+    check("PDF 400", r.status_code == 400 and "CSV / XLSX" in r.get_json().get("error", ""))
+    _clear()
+    r = c.post("/api/agents/reconciler/upload",
+               data={"file": (io.BytesIO(raw), "流水.csv")},
+               content_type="multipart/form-data")
+    body = r.get_json()
+    check("CSV 上传 200 回填文本",
+          r.status_code == 200 and body.get("ok") and "华阳汽车零部件" in body.get("text", ""),
+          str(body)[:120])
+    check("upload 限流桶 recon_upload",
+          "127.0.0.1" in app._ask_limits.get("recon_upload", {}))
+
+
 if __name__ == "__main__":
     test_registry()
     test_run_unit()
     test_http()
+    test_upload()
     print("\n==== %d passed, %d failed ====" % (PASS, FAIL))
     sys.exit(1 if FAIL else 0)

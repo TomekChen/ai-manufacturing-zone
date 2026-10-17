@@ -6,14 +6,14 @@ import urllib.request
 
 BASE = "http://127.0.0.1:8804"
 LEDGER = "/app/data/corpus_ingested.json"
-URLS = json.load(open("os.path.join(os.path.dirname(os.path.abspath(__file__)), "urls.json")", encoding="utf-8"))
+URLS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "urls.json"), encoding="utf-8"))
 
 tok_src = os.environ["ADMIN_ACCOUNT"] + os.environ["ADMIN_PASSWORD"] + os.environ["SECRET_KEY"]
 TOKEN = hashlib.sha256((tok_src + os.environ["SECRET_KEY"]).encode()).hexdigest()[:32]
 
 done = set()
 if os.path.exists(LEDGER):
-    done = {r["url"] for r in json.load(open(LEDGER, encoding="utf-8"))}
+    done = {r.get("url") for r in json.load(open(LEDGER, encoding="utf-8")) if isinstance(r, dict) and r.get("url")}
 
 ok, fail, skipped = [], [], []
 for item in URLS:

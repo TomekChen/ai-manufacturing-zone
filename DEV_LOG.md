@@ -1475,3 +1475,15 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **事故：WeKnora 容器掉线**：浏览器验证中发现公开知识问答 502——weknora-app/docreader 两容器未运行（docker ps 无记录，疑似此前某次维护 docker compose down 后未起）。docker compose up -d 拉起，健康后问答恢复 200；两容器 restart 策略固化为 unless-stopped 防复发。教训：门户问答强依赖 WeKnora，其容器不在本项目 compose 管辖内，巡检项应包含 weknora 容器状态（portal 心跳目前只探本项目服务）。
 
 **待人工点验**：管理后台「方案会话」删除按钮（无凭据不做登录自动化）——登录后删一条测试会话，确认列表移除、分享页 404。
+
+## 四十九、A9 增强：对账文件上传解析 + ingest.py 双 bug 修复（2026-10-17）
+
+**文件上传解析**（对账助手从"只能粘贴"到"能吃银行导出文件"）：
+- agents/reconciler.py 新增 parse_upload(filename, data)：CSV/TXT 用 stdlib（编码依次试 utf-8-sig/gbk/utf-8/latin-1，覆盖 Excel 导出 BOM 和老网银 GBK），XLSX 用 openpyxl（read_only + data_only 取显示值，收进 requirements.txt）；单元格以制表符连接、空行丢弃，2000 行 / 12000 字符双截断（防止整份年度流水灌给 LLM）；
+- agents_api.py 新增公开端点 POST /api/agents/reconciler/upload（multipart），限流 20 次/分/IP 独立桶 recon_upload，解析在 agents 包、本模块只管 HTTP 门面（同 run 端点分工）；
+- 前端 AgentRecon.jsx 流水/台账两个输入框各加「📎 上传 CSV/Excel」按钮，解析结果回填文本框（已有内容则追加，可混用粘贴+上传）；
+- tests/test_reconciler.py +10 断言（33→39，CSV utf-8-sig/GBK/xlsx/类型拒绝/空文件/HTTP 全链路），全量 16 文件 375 绿。
+
+**坑**：openpyxl 的 Workbook 不支持 with 上下文（和常见的误记相反），用 try/finally close()；只有表头行的 CSV 会把表头当数据行返回——测试改为真空文件验证"没有可读取的数据行"。
+
+**ingest.py 双 bug 修复**：①URLS 打开的路径是字符串字面量（os.path.join 整段被写进引号里），运行即 FileNotFoundError；②账本读取 r["url"] 对缺键记录直接 KeyError——改 .get + isinstance 过滤。此脚本只在采集时容器内手动跑，改动无需部署。

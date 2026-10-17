@@ -7,3 +7,4 @@ beautifulsoup4>=4.12.0
 # BM25/混合检索用；缺失时 rag 自动降级为纯向量（不报错）
 rank_bm25>=0.2.2
 jieba>=0.42.1
+openpyxl>=3.1.0

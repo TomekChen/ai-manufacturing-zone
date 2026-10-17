@@ -6,6 +6,8 @@ LLM 输出强制 JSON：完全匹配对 / 疑似匹配（附核对要点）/ 双
 只给建议不给结论——疑似项必须人工确认后才能入账。LLM 解析失败收敛 RuntimeError
 （端点层 502）；入参校验失败抛 ValueError（端点层 400）。
 """
+import csv
+import io
 import json
 
 from rag import prd as kb_prd
@@ -25,6 +27,55 @@ _SYSTEM = """你是制造企业的财务对账助手。用户会提供两份文�
   "notes": "其他需要提醒的差异或风险，没有则空字符串"
 }
 要求：金额一律保留原文写法，不要换算或编造；匹配依据写清具体凭据；两边数量不一致时差额必须出现在 unmatched 列表里；不确定就放 suspected，宁多勿漏。"""
+
+MAX_UPLOAD_ROWS = 2000  # 解析行数上限（超出截断，防止把整份年度流水灌给 LLM）
+
+
+def parse_upload(filename, data):
+    """上传的对账文件 → 表格文本（A9 增强，run() 入参同款格式）。
+
+    CSV/TXT 用 stdlib（编码依次试 utf-8-sig/gbk/utf-8/latin-1，兼容银行网银导出），
+    XLSX 用 openpyxl（只读首个工作表，取单元格显示值）。返回 (text, total_rows)。
+    入参非法抛 ValueError（端点层 400）。
+    """
+    name = (filename or "").lower()
+    if name.endswith(".csv") or name.endswith(".txt"):
+        text = None
+        for enc in ("utf-8-sig", "gbk", "utf-8", "latin-1"):
+            try:
+                text = data.decode(enc)
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+        if text is None:
+            raise ValueError("无法识别文件编码（请用 UTF-8 或 GBK 编码的 CSV）")
+        rows = list(csv.reader(io.StringIO(text)))
+    elif name.endswith(".xlsx"):
+        try:
+            import openpyxl
+        except ImportError:
+            raise RuntimeError("服务器未安装 openpyxl，暂不支持 Excel 文件")
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        except Exception as e:
+            raise ValueError("无法解析 Excel 文件：%s" % str(e)[:120])
+        try:
+            ws = wb.worksheets[0]
+            rows = [[("" if c is None else str(c)) for c in row]
+                    for row in ws.iter_rows(values_only=True)]
+        finally:
+            wb.close()
+    else:
+        raise ValueError("只支持 CSV / XLSX 文件（扫描件 PDF 暂不支持）")
+
+    lines = []
+    for row in rows[:MAX_UPLOAD_ROWS]:
+        line = "\t".join(str(c).strip() for c in row).strip()
+        if line:
+            lines.append(line)
+    if not lines:
+        raise ValueError("文件里没有可读取的数据行")
+    return "\n".join(lines)[:12000], min(len(rows), MAX_UPLOAD_ROWS)
 
 
 @register

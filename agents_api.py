@@ -103,6 +103,29 @@ def api_agent_run(agent_id):
     return _run_agent(agent, payload)
 
 
+@bp.route("/api/agents/reconciler/upload", methods=["POST"])
+@limiter(20, 60, bucket="recon_upload", message="上传太频繁，请稍后再试")
+def api_reconciler_upload():
+    """对账文件上传解析（A9 增强）：CSV/XLSX → 表格文本，前端回填对账输入框。
+
+    解析在 agents.reconciler.parse_upload，本模块只管 HTTP 门面（同 run 端点分工）。
+    """
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "请选择要上传的文件"}), 400
+    data = f.read()
+    if not data:
+        return jsonify({"error": "文件内容为空"}), 400
+    from agents.reconciler import parse_upload
+    try:
+        text, rows = parse_upload(f.filename, data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    return jsonify({"ok": True, "filename": f.filename, "rows": rows, "text": text})
+
+
 @bp.route("/api/agents/prd/run", methods=["POST"])
 def api_agents_prd_run_legacy():
     """A1 兼容路径：旧前端包硬编码此地址；返回 A1 的扁平结果形状。"""

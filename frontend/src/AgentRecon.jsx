@@ -43,8 +43,30 @@ export default function AgentRecon({ agent, onClose }) {
   const [result, setResult] = useState(null);
   const [approvalMsg, setApprovalMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState('');
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/reconciler/run';
+
+  // A9 增强：CSV/Excel 银行导出文件 → 后端解析成表格文本回填输入框
+  const uploadFile = async (e, target) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(target); setErr('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/agents/reconciler/upload', { method: 'POST', body: fd });
+      if (!res.ok) { setErr(await readError(res)); return; }
+      const data = await res.json();
+      if (target === 'statement') setStatement(t => (t.trim() ? t + '\n' + data.text : data.text));
+      else setLedger(t => (t.trim() ? t + '\n' + data.text : data.text));
+    } catch (e2) {
+      setErr('上传失败：' + (e2.message || e2));
+    } finally {
+      setUploading('');
+    }
+  };
 
   const run = useCallback(async () => {
     const s = statement.trim();
@@ -119,7 +141,13 @@ export default function AgentRecon({ agent, onClose }) {
 
           <div className="prd-form">
             <div className="prd-field">
-              <label>银行流水 <span className="prd-req">*</span></label>
+              <label>银行流水 <span className="prd-req">*</span>
+                <span className="btn btn-ghost btn-sm" style={{ marginLeft: 8, cursor: uploading ? 'wait' : 'pointer' }}>
+                  {uploading === 'statement' ? '解析中…' : '📎 上传 CSV/Excel'}
+                  <input type="file" accept=".csv,.txt,.xlsx" hidden
+                         onChange={e => uploadFile(e, 'statement')} />
+                </span>
+              </label>
               <textarea value={statement} maxLength={12000} rows={6}
                         placeholder={'例如粘贴网银导出的流水：\n"2026-10-08 收 华阳汽车零部件 50,000.00 附言：PO-2026-1001 货款\n2026-10-09 付 苏州钢材贸易 32,100.00 附言：原材料款"'}
                         onChange={e => setStatement(e.target.value)}
@@ -127,7 +155,13 @@ export default function AgentRecon({ agent, onClose }) {
               <div className="prd-count">{statement.length}/12000</div>
             </div>
             <div className="prd-field">
-              <label>应收应付台账（可选，没有则只做流水侧归类）</label>
+              <label>应收应付台账（可选，没有则只做流水侧归类）
+                <span className="btn btn-ghost btn-sm" style={{ marginLeft: 8, cursor: uploading ? 'wait' : 'pointer' }}>
+                  {uploading === 'ledger' ? '解析中…' : '📎 上传 CSV/Excel'}
+                  <input type="file" accept=".csv,.txt,.xlsx" hidden
+                         onChange={e => uploadFile(e, 'ledger')} />
+                </span>
+              </label>
               <textarea value={ledger} maxLength={8000} rows={4}
                         placeholder={'例如：\n"应收 华阳汽车零部件 50,000 单号 PO-2026-1001，10月8日到期\n应付 苏州钢材贸易 32,100 采购单 CG-0930，账期30天"'}
                         onChange={e => setLedger(e.target.value)} />
