@@ -72,6 +72,27 @@ _wk_sessions_lock = threading.Lock()
 # WeKnora 回答里的内联引用标记（<kb doc=".." chunk_id=".."/>），前台来源列表
 # 已单独展示，这里清掉避免以原始标签形式混进正文
 _WK_CITE_RE = re.compile(r"<kb\b[^>]*/>|<kb\b[^>]*>.*?</kb>", re.S)
+# WeKnora 回答里的图片用的是它自己的内部协议（resource://xxx），浏览器取不到，
+# 前台又是纯文本渲染，留着就是一行行乱码——一并清掉；http(s) 图片原样保留
+_WK_IMG_RE = re.compile(r"!\[[^\]]*\]\(\s*(?!https?://)[^)]*\)")
+
+
+def clean_weknora_answer(answer):
+    """清掉回答正文里前台渲染不出来的引用噪声（内联 <kb> 标签、非 http 图片）。"""
+    return _WK_IMG_RE.sub("", _WK_CITE_RE.sub("", answer or "")).strip()
+
+
+def build_sources(refs):
+    """WeKnora 引用 → 前台来源列表。同一篇文档常被切成多段引用，按标题去重，
+    「引用 N 条」才不虚报（与旧链路 rag.intents._dedup_sources 同口径）。"""
+    seen, sources = set(), []
+    for r in refs or []:
+        title = r.get("title") or "(未命名)"
+        if title in seen:
+            continue
+        seen.add(title)
+        sources.append({"title": title, "snippet": r.get("snippet") or ""})
+    return sources
 
 
 def _wk_session_get(conversation_id):
@@ -113,9 +134,8 @@ def _ask_weknora(question, history, conversation_id):
         except wk_engine.EngineError as e2:
             raise RuntimeError("WeKnora 问答失败：%s" % str(e2)[:120])
     _wk_session_save(conversation_id, session_id)
-    answer = _WK_CITE_RE.sub("", answer or "").strip()
-    sources = [{"title": r.get("title") or "(未命名)", "snippet": r.get("snippet") or ""}
-               for r in refs]
+    answer = clean_weknora_answer(answer)
+    sources = build_sources(refs)
     hits = len(sources)
     # 无引用 = 答案无据可依（WeKnora 的拒绝式回答），遥测按 refused 记
     _kb.log_weknora_ask(ask_id, question, hits, refused=hits == 0, answer=answer,

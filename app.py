@@ -19,6 +19,7 @@ R5 起 app.py 只做三件事：
   order_mail.py  订单邮件自动捕获（IMAP 轮询 → 订单机器人抽取 → 捕获账本）
   web_capture.py 网页抓单（管理端配来源 → 抓取渲染文本 → 复用捕获账本）
   listing.py     上架物料流水线（体检 → 样例实测 → 文案 → 分镜 → 审批出包）
+  showcase.py    对外示例（实测输出留档 → 后台挑选 → 体验弹窗展示）
   approval.py    审批留痕中间层（智能体产出先审后用，append-only 留痕）
 """
 import os
@@ -39,6 +40,7 @@ import order_mail
 import web_capture
 import approval
 import listing
+import showcase
 
 # 供测试/运维引用的兼容转出口（app.<name> 与拆分前同一对象）
 from core import (DATA_DIR, PROJECTS_FILE, ADMIN_ACCOUNT, ADMIN_PASSWORD,  # noqa: F401
@@ -70,9 +72,10 @@ order_mail.init(DATA_DIR, load_json, save_json, require_admin)
 web_capture.init(DATA_DIR, load_json, save_json, require_admin, order_mail.append_capture)
 approval.init(DATA_DIR, load_json, save_json, require_admin)
 listing.init(DATA_DIR, load_json, save_json, require_admin)
+showcase.init(DATA_DIR, load_json, save_json, require_admin, listing.read_candidates)
 
 for module in (portal, qa, agents_api, webapp, kb_admin, kb_weknora, prd_sessions,
-               mcp_endpoint, order_mail, approval, web_capture, listing):
+               mcp_endpoint, order_mail, approval, web_capture, listing, showcase):
     app.register_blueprint(module.bp)
 
 # 订单邮件轮询线程（enabled 且配置齐全才会真正连邮箱；与 heartbeat 同为 daemon）

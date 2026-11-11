@@ -1,11 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { readError } from './api';
+import ShowcasePicker, { DemoNote } from './Showcase';
 
 /* ===== 对账助手 · 公开在线体验弹窗（A9 第四个上线智能体） =====
    粘贴银行流水（必填）+ 应收应付台账（可选）→ 后端逐笔比对：
    完全匹配 / 疑似匹配（附核对要点）/ 未达账项 / 建议分录。
    ui=recon 的智能体走本弹窗（main.jsx 按 agent.ui 分流）；
-   样式复用 prd-* 体系，不新增 CSS。 */
+   样式复用 prd-* 体系，不新增 CSS。
+   A12：「先看示例」的示例结果复用本弹窗自己的三堆分组渲染。 */
 
 const Section = ({ title, children }) => (
   <div className="prd-field">
@@ -44,8 +46,21 @@ export default function AgentRecon({ agent, onClose }) {
   const [approvalMsg, setApprovalMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState('');
+  const [demo, setDemo] = useState(null);
+  const [fillTip, setFillTip] = useState('');
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/reconciler/run';
+
+  const showDemo = (row) => {
+    setErr(''); setFillTip(''); setDemo(row);
+    setResult({ ...(row.output || {}), confidence: row.confidence });
+  };
+  const useDemo = (row) => {
+    const p = row.input || {};
+    setStatement(String(p.statement || ''));
+    setLedger(String(p.ledger || ''));
+    setFillTip('示例流水与台账已填入，点「开始对账」即可自己跑一遍');
+  };
 
   // A9 增强：CSV/Excel 银行导出文件 → 后端解析成表格文本回填输入框
   const uploadFile = async (e, target) => {
@@ -71,7 +86,7 @@ export default function AgentRecon({ agent, onClose }) {
   const run = useCallback(async () => {
     const s = statement.trim();
     if (!s || loading) return;
-    setErr(''); setLoading(true); setResult(null);
+    setErr(''); setLoading(true); setResult(null); setDemo(null); setFillTip('');
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -140,6 +155,7 @@ export default function AgentRecon({ agent, onClose }) {
           </div>
 
           <div className="prd-form">
+            <ShowcasePicker agentId={agent?.id} active={demo?.label} onShow={showDemo} onUse={useDemo} />
             <div className="prd-field">
               <label>银行流水 <span className="prd-req">*</span>
                 <span className="btn btn-ghost btn-sm" style={{ marginLeft: 8, cursor: uploading ? 'wait' : 'pointer' }}>
@@ -173,12 +189,14 @@ export default function AgentRecon({ agent, onClose }) {
               </button>
               <span className="agent-kb-tip">Ctrl + Enter 快速提交</span>
             </div>
+            {fillTip && <div style={{ margin: '8px 0', fontSize: 13, color: '#0369a1' }}>{fillTip}</div>}
             {loading && <div className="prd-loading"><span className="prd-spinner" /> AI 正在逐笔比对流水与台账，请稍候…</div>}
             {err && <div className="prd-err">{err}</div>}
           </div>
 
           {result && (
             <div className="prd-result">
+              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${unmatchedBank.length + unmatchedLedger.length === 0 ? 'ok' : 'muted'}`}>
                   {unmatchedBank.length + unmatchedLedger.length === 0
@@ -188,8 +206,9 @@ export default function AgentRecon({ agent, onClose }) {
                 <span className="prd-badge muted">
                   置信度：{confidenceBadge}
                 </span>
-                <button className="btn btn-sm btn-ghost" disabled={submitting}
-                        onClick={submitApproval}>
+                <button className="btn btn-sm btn-ghost" disabled={submitting || !!demo}
+                        onClick={submitApproval}
+                        title={demo ? '示例结果不能提交审批，请用自己的数据跑一遍' : undefined}>
                   {submitting ? '提交中…' : '提交人工审批'}
                 </button>
               </div>

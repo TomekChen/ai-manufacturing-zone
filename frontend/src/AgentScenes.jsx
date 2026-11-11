@@ -1,22 +1,35 @@
 import React, { useState, useCallback } from 'react';
 import { readError } from './api';
+import ShowcasePicker, { DemoNote } from './Showcase';
 
 /* ===== 场景分镜师 · 公开在线体验弹窗（第五个上线智能体） =====
    品牌/行业输入 → 分镜脚本（场景顺序/内容/静帧提示词/镜头衔接）。
    ui=scenes 的智能体走本弹窗（main.jsx 按 agent.ui 分流）；
-   样式复用 prd-* 体系，不新增 CSS。 */
+   样式复用 prd-* 体系，不新增 CSS。
+   A12：输入框上方「先看示例」，示例脚本复用本弹窗自己的镜头列表渲染。 */
 export default function AgentScenes({ agent, onClose }) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null);
+  const [demo, setDemo] = useState(null);
+  const [fillTip, setFillTip] = useState('');
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/scene-director/run';
+
+  const showDemo = (row) => {
+    setErr(''); setFillTip(''); setDemo(row);
+    setResult({ ...(row.output || {}), confidence: row.confidence });
+  };
+  const useDemo = (row) => {
+    setText(String((row.input || {}).text || ''));
+    setFillTip('示例原文已填入，点「生成分镜脚本」即可自己跑一遍');
+  };
 
   const run = useCallback(async () => {
     const t = text.trim();
     if (!t || loading) return;
-    setErr(''); setLoading(true); setResult(null);
+    setErr(''); setLoading(true); setResult(null); setDemo(null); setFillTip('');
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -52,6 +65,7 @@ export default function AgentScenes({ agent, onClose }) {
           </div>
 
           <div className="prd-form">
+            <ShowcasePicker agentId={agent?.id} active={demo?.label} onShow={showDemo} onUse={useDemo} />
             <div className="prd-field">
               <label>品牌 / 行业 / 想展示的内容 <span className="prd-req">*</span></label>
               <textarea value={text} maxLength={2000} rows={5}
@@ -66,12 +80,14 @@ export default function AgentScenes({ agent, onClose }) {
               </button>
               <span className="agent-kb-tip">Ctrl + Enter 快速提交</span>
             </div>
+            {fillTip && <div style={{ margin: '8px 0', fontSize: 13, color: '#0369a1' }}>{fillTip}</div>}
             {loading && <div className="prd-loading"><span className="prd-spinner" /> AI 正在编排镜头与场景，请稍候…</div>}
             {err && <div className="prd-err">{err}</div>}
           </div>
 
           {result && (
             <div className="prd-result">
+              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${scenes.length >= 4 && scenes.length <= 8 ? 'ok' : 'muted'}`}>
                   {scenes.length} 个场景

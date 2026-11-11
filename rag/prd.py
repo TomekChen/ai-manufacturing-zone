@@ -143,13 +143,19 @@ def build_prd_messages(company, industry, business, mode, raw_requirements, cont
 # ---------- 主流程 ----------
 
 def _extract_sources(hits):
-    out = []
+    """接地来源列表：同一篇文档常被切成多段命中，按标题+链接去重，「参考来源」才不重复刷屏。"""
+    out, seen = [], set()
     for h in hits or []:
         doc = h.get("doc") or {}
         title = (doc.get("title") or "").strip()
         url = (doc.get("url") or "").strip()
-        if title or url:
-            out.append({"title": title or "未命名资料", "url": url})
+        if not (title or url):
+            continue
+        key = (title, url)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"title": title or "未命名资料", "url": url})
     return out
 
 

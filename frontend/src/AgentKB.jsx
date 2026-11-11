@@ -1,11 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import renderMarkdown from './markdown';
 import { readError } from './api';
+import ShowcasePicker, { DemoNote } from './Showcase';
 
 /* ===== 知识管家 · 公开在线体验弹窗（A3 第二个上线智能体） =====
    经注册表 endpoint 调用，与首页「知识问答」区同一条后端链路。
    ui=qa 的智能体走本弹窗（main.jsx 按 agent.ui 分流）。
-   说明文字 ≥14px，输入区加大。 */
+   说明文字 ≥14px，输入区加大。
+   A12：「先看示例」含一条知识库里查不到的提问——展示「不编造」这条卖点。 */
 const SUGGESTIONS = [
   '知识库里有哪些资料？',
   'AI 质检能解决什么问题？',
@@ -18,14 +20,25 @@ export default function AgentKB({ agent, onClose }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState(null);
+  const [demo, setDemo] = useState(null);
+  const [fillTip, setFillTip] = useState('');
 
   // 端点来自注册表；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/kb-assistant/run';
 
+  const showDemo = (row) => {
+    setErr(''); setFillTip(''); setDemo(row);
+    setResult({ ...(row.output || {}), confidence: row.confidence });
+  };
+  const useDemo = (row) => {
+    setQuestion(String((row.input || {}).question || ''));
+    setFillTip('示例问题已填入，点「提问」即可自己跑一遍');
+  };
+
   const ask = useCallback(async (q) => {
     const text = (q ?? question).trim();
     if (!text || loading) return;
-    setErr(''); setLoading(true); setResult(null);
+    setErr(''); setLoading(true); setResult(null); setDemo(null); setFillTip('');
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -62,6 +75,7 @@ export default function AgentKB({ agent, onClose }) {
           </div>
 
           <div className="prd-form">
+            <ShowcasePicker agentId={agent?.id} active={demo?.label} onShow={showDemo} onUse={useDemo} />
             <div className="prd-field">
               <label>您的问题 <span className="prd-req">*</span></label>
               <textarea value={question} maxLength={500} rows={3}
@@ -85,12 +99,14 @@ export default function AgentKB({ agent, onClose }) {
               </button>
               <span className="agent-kb-tip">Ctrl + Enter 快速提交</span>
             </div>
+            {fillTip && <div style={{ margin: '8px 0', fontSize: 13, color: '#0369a1' }}>{fillTip}</div>}
             {loading && <div className="prd-loading"><span className="prd-spinner" /> 正在检索知识库并生成回答，请稍候…</div>}
             {err && <div className="prd-err">{err}</div>}
           </div>
 
           {result && (
             <div className="prd-result">
+              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${sources.length > 0 ? 'ok' : 'muted'}`}>
                   {sources.length > 0 ? `引用知识库 ${sources.length} 条` : '未命中知识库（仅供参考）'}

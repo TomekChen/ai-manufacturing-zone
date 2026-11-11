@@ -15,6 +15,8 @@ Blueprint + 依赖注入（同 order_mail 模式）：本模块不 import app，
 app.py 装配时 init(data_dir, load_json, save_json, require_admin) 注入设施。
 
 存储：data/listings.json——[{id, agent_id, status, stages:{...}, ...}]，留最近 100 条。
+      data/showcase_candidates.json——{agent_id: {样例序号: 最新一次输入与输出}}，实测留档（A12）。
+      data/showcases.json——对外示例，后台从候选池挑选后写入（A12）。
 状态机：running → done|failed → approved|rejected（人工闸门，reject 必填理由）。
 """
 import json
@@ -47,17 +49,20 @@ _require_admin = None
 # ---------- 内置样例集（每产品 3 组真实制造场景输入） ----------
 SAMPLES = {
     "prd-advisor": [
-        {"company": "华阳汽车零部件", "industry": "汽车零部件", "business": "304不锈钢法兰盘精加工，5000件月产能，交期紧", "mode": "standard"},
-        {"company": "精工模具", "industry": "模具制造", "business": "注塑模具设计与CNC加工一体，小批量多品种", "mode": "standard"},
-        {"company": "宏泰电子", "industry": "电子组装", "business": "SMT贴片+DIP插件，年产能200万套，客户要求全流程追溯", "mode": "standard"},
+        {"company": "华阳汽车零部件", "industry": "汽车零部件", "business": "304不锈钢法兰盘精加工，5000件月产能，交期紧", "mode": "guide"},
+        {"company": "精工模具", "industry": "模具制造", "business": "注塑模具设计与CNC加工一体，小批量多品种", "mode": "guide"},
+        {"company": "宏泰电子", "industry": "电子组装", "business": "SMT贴片+DIP插件，年产能200万套，客户要求全流程追溯",
+         "mode": "normalize", "raw_requirements": "想要个能自动录订单的东西，最好财务对账也能一起管，我们用的是金蝶ERP。"},
     ],
     "kb-assistant": [
         {"question": "MES 系统和 ERP 系统的区别是什么"},
         {"question": "智能制造能力成熟度分几个等级"},
         {"question": "AI 视觉检测在产线上怎么落地"},
+        # 第 4 组故意问知识库里没有的内容：演示「查不到就明说不知道」这条卖点
+        {"question": "我们公司的差旅报销流程是什么"},
     ],
     "order-catcher": [
-        {"text": "李经理 13800000000：我司（华阳汽车零部件）需订购 304 不锈钢法兰盘 DN50 带颈对焊 2000 件，2026-12-20 前交货到苏州仓库，木箱包装。"},
+        {"text": "李经理 13800000000：我司（华阳汽车零部件）需订购 304 不锈钢法兰盘 DN50 带颈对焊 2000 件，订单号 PO-2026-1105，2026-12-20 前交货到苏州仓库，木箱包装。"},
         {"text": "询盘：精密轴 φ20x100mm 5000 支，报价请发 sales@example.com，交期 11 月底。"},
         {"text": "王工：上次那批齿轮泵再补 30 台，客户是北方重工，走物流到沈阳，发票开专票。"},
     ],
@@ -139,6 +144,27 @@ def _now():
     return datetime.now().isoformat(timespec="seconds")
 
 
+# ---------- 示例候选池（A12：实测输出留档，供后台挑选为对外示例） ----------
+
+def _cand_file():
+    return os.path.join(_data_dir, "showcase_candidates.json")
+
+
+def read_candidates(agent_id):
+    """某产品每个样例序号的最新一次输出，序号小的在前；没留下输出的不列。"""
+    book = _load_json(_cand_file(), {}) or {}
+    per = book.get(agent_id) or {}
+    out = [per[k] for k in sorted(per, key=lambda x: int(x)) if isinstance(per[k], dict)]
+    return [r for r in out if r.get("output")]
+
+
+def _save_candidate(agent_id, rec):
+    """按 (产品, 样例序号) 覆盖为最新一轮，重跑不膨胀。"""
+    book = _load_json(_cand_file(), {}) or {}
+    book.setdefault(agent_id, {})[str(rec["no"])] = rec
+    _save_json(_cand_file(), book)
+
+
 # ---------- 阶段实现 ----------
 
 def _stage_health(row, agent):
@@ -179,8 +205,11 @@ def _coverage(result):
     return round(filled / len(vals), 2)
 
 
-def _stage_metrics(agent):
-    """样例实测：逐个真跑，统计成功率/置信度/耗时/覆盖率。"""
+def _stage_metrics(agent, lid=None):
+    """样例实测：逐个真跑，统计成功率/平均置信度/耗时/覆盖率。
+
+    跑通的样例输出同时写入候选池（A12），供管理后台挑选为对外示例。
+    """
     samples = SAMPLES.get(agent.id) or []
     rows = []
     for i, payload in enumerate(samples, 1):
@@ -198,6 +227,17 @@ def _stage_metrics(agent):
             item["error"] = str(e)[:160]
         item["latency_ms"] = int((time.time() - t0) * 1000)
         rows.append(item)
+        if item["ok"] and lid:
+            _save_candidate(agent.id, {
+                "no": i,
+                "input": dict(payload),
+                "output": (res or {}).get("result"),
+                "confidence": item["confidence"],
+                "coverage": item["coverage"],
+                "latency_ms": item["latency_ms"],
+                "listing_id": lid,
+                "ts": _now(),
+            })
 
     ok_rows = [r for r in rows if r["ok"]]
     confs = [r["confidence"] for r in ok_rows if isinstance(r["confidence"], (int, float))]
@@ -283,7 +323,7 @@ def run_pipeline(row, agent=None):
             if name == "health":
                 data = _stage_health(row, agent)
             elif name == "metrics":
-                data = _stage_metrics(agent)
+                data = _stage_metrics(agent, row.get("id"))
             elif name == "copy":
                 data = _stage_copy(agent, stages.get("metrics", {}).get("data") or {})
             else:

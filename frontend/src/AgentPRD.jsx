@@ -1,11 +1,30 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { MarkdownView } from './AdminPRD';
 import { readError } from './api';
+import ShowcasePicker, { DemoNote } from './Showcase';
 
 
 /* ===== 售前方案师 · 公开在线体验弹窗（A1 曳光弹，A2 接入注册表） =====
    与后台版 AdminPRD 同一引擎；端点取自智能体注册表（agent.endpoint），
-   无需管理员登录，按 IP 限流（每 IP 每小时 5 次）。说明文字 ≥14px，输入区加大。 */
+   无需管理员登录，按 IP 限流（每 IP 每小时 5 次）。说明文字 ≥14px，输入区加大。
+   A12：「先看示例」用同一套 MarkdownView 渲染整份方案，默认只露目录 + 前两节。 */
+
+const MODE_LABEL = { guide: '引导', normalize: '规范化' };
+
+/** 示例方案默认折叠：露出全文章节目录 + 前两节正文，其余点「展开全文」再看。 */
+function prdCut(md) {
+  const lines = (md || '').split('\n');
+  let h2 = 0, cut = lines.length;
+  const toc = [];
+  lines.forEach((l, i) => {
+    if (!/^##\s/.test(l)) return;
+    h2 += 1;
+    toc.push(l.replace(/^##\s+/, ''));
+    if (h2 === 3) cut = i;
+  });
+  return { head: lines.slice(0, cut).join('\n'), toc, folded: cut < lines.length };
+}
+
 export default function AgentPRD({ agent, onClose }) {
   const [company, setCompany] = useState('');
   const [industry, setIndustry] = useState('');
@@ -19,14 +38,34 @@ export default function AgentPRD({ agent, onClose }) {
   const savedRef = useRef(null); // 保存 session_id 跨多次生成（ref 防闭包陈旧）
   const [history, setHistory] = useState(null); // 会话全部版本（T2 回放用）
   const [viewV, setViewV] = useState(0); // 当前展示的版本号（0=未指定）
+  const [demo, setDemo] = useState(null);
+  const [fillTip, setFillTip] = useState('');
+  const [expandDemo, setExpandDemo] = useState(false); // 示例全文是否展开
 
   // A2：端点来自注册表，而非硬编码；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/prd-advisor/run';
+
+  const showDemo = (row) => {
+    setErr(''); setFillTip(''); setExpandDemo(false); setDemo(row);
+    // 切到示例快照：本次会话的版本条/存档标记先收起，避免和示例混在一起
+    setHistory(null); setSaved(null); setViewV(0);
+    setResult({ ...(row.output || {}), confidence: row.confidence });
+  };
+  const useDemo = (row) => {
+    const p = row.input || {};
+    setCompany(String(p.company || ''));
+    setIndustry(String(p.industry || ''));
+    setBusiness(String(p.business || ''));
+    if (MODE_LABEL[p.mode]) setMode(p.mode);
+    setRaw(String(p.raw_requirements || ''));
+    setFillTip('示例客户信息已填入，点「生成 PRD」即可自己跑一遍');
+  };
 
   const generate = useCallback(async () => {
     setErr('');
     setLoading(true);
     setResult(null);
+    setDemo(null); setFillTip(''); setExpandDemo(false);
     setSaved(null);
     setHistory(null);
     setViewV(0);
@@ -122,6 +161,7 @@ export default function AgentPRD({ agent, onClose }) {
           </div>
 
           <div className="prd-form">
+            <ShowcasePicker agentId={agent?.id} active={demo?.label} onShow={showDemo} onUse={useDemo} />
             <div className="prd-field">
               <label>公司名称 <span className="prd-req">*</span></label>
               <input value={company} maxLength={60} placeholder="例如：某某精密制造股份有限公司"
@@ -172,7 +212,7 @@ export default function AgentPRD({ agent, onClose }) {
               <button className="btn btn-primary" onClick={generate} disabled={!canSubmit}>
                 {loading ? '正在生成（约 15–40 秒）…' : '生成 PRD'}
               </button>
-              {result && (
+              {result && !demo && (
                 <>
                   <button className="btn btn-ghost" onClick={copyPrd}>复制全文</button>
                   <button className="btn btn-ghost" onClick={downloadPrd}>下载 .md</button>
@@ -185,12 +225,14 @@ export default function AgentPRD({ agent, onClose }) {
                 </>
               )}
             </div>
+            {fillTip && <div style={{ margin: '8px 0', fontSize: 13, color: '#0369a1' }}>{fillTip}</div>}
             {loading && <div className="prd-loading"><span className="prd-spinner" /> AI 正在撰写方案，请稍候…</div>}
             {err && <div className="prd-err">{err}</div>}
           </div>
 
           {result && (
             <div className="prd-result">
+              {demo && <DemoNote />}
               {history && history.versions && history.versions.length > 0 && (
                 <div className="prd-version-bar">
                   <span className="prd-version-label">历史版本</span>
@@ -211,7 +253,7 @@ export default function AgentPRD({ agent, onClose }) {
                 <span className={`prd-badge ${result.grounded ? 'ok' : 'muted'}`}>
                   {result.grounded ? `已接地知识库 ${result.hits} 条` : '未接地（知识库无相关命中）'}
                 </span>
-                <span className="prd-badge muted">模式：{result.mode === 'guide' ? '引导' : '规范化'}</span>
+                <span className="prd-badge muted">模式：{MODE_LABEL[result.mode] || result.mode || '—'}</span>
                 <span className="prd-badge muted">模型：{result.model}</span>
                 {saved && (
                   <span className="prd-badge ok" title="本次会话已存档，旧版本不会被覆盖">
@@ -229,7 +271,36 @@ export default function AgentPRD({ agent, onClose }) {
                   ))}
                 </div>
               )}
-              <MarkdownView text={result.prd} />
+              {(() => {
+                if (!demo || expandDemo) {
+                  return (
+                    <>
+                      <MarkdownView text={result.prd} />
+                      {demo && (
+                        <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
+                                onClick={() => setExpandDemo(false)}>收起方案</button>
+                      )}
+                    </>
+                  );
+                }
+                const { head, toc, folded } = prdCut(result.prd);
+                return (
+                  <>
+                    {toc.length > 0 && (
+                      <div className="prd-sources">
+                        方案目录（共 {toc.length} 节）：{toc.join(' / ')}
+                      </div>
+                    )}
+                    <MarkdownView text={head} />
+                    {folded && (
+                      <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
+                              onClick={() => setExpandDemo(true)}>
+                        展开全文（约 {(result.prd || '').length} 字）
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>

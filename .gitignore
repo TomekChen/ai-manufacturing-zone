@@ -37,3 +37,7 @@ Thumbs.db
 # 环境变量
 .env
 package-lock.json
+
+# 示例候选池与定稿示例是运行时产物（出厂示例走 showcases_seed.json 入库）
+data/showcase_candidates.json
+data/showcases.json

@@ -1,10 +1,19 @@
 import React, { useState, useCallback } from 'react';
 import { readError } from './api';
+import ShowcasePicker, { DemoNote } from './Showcase';
 
 /* ===== 订单机器人 · 公开在线体验弹窗（A7 第三个上线智能体） =====
    粘贴订单原文（邮件/网页询盘/聊天记录）→ 后端抽成结构化工单。
    ui=order 的智能体走本弹窗（main.jsx 按 agent.ui 分流）；
-   样式复用 prd-* 体系，不新增 CSS。 */
+   样式复用 prd-* 体系，不新增 CSS。
+   A12：输入框上方「先看示例」，示例结果复用本弹窗自己的工单渲染。 */
+
+/* 后端 missing 里放的是工单 JSON 的英文字段名（契约不变），给客户看要翻成中文标签 */
+const FIELD_CN = {
+  order_no: '订单号', customer: '客户', contact: '联系人/方式',
+  delivery_date: '交货日期', products: '产品明细', notes: '备注',
+};
+
 export default function AgentOrder({ agent, onClose }) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -12,13 +21,25 @@ export default function AgentOrder({ agent, onClose }) {
   const [result, setResult] = useState(null);
   const [approvalMsg, setApprovalMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [demo, setDemo] = useState(null); // 正在查看的示例（null=客户自己跑的结果）
+  const [fillTip, setFillTip] = useState('');
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/order-catcher/run';
+
+  // A12 示例：快照直接喂给下面的工单渲染；自己跑一次即退出示例态
+  const showDemo = (row) => {
+    setErr(''); setFillTip(''); setDemo(row);
+    setResult({ ...(row.output || {}), confidence: row.confidence });
+  };
+  const useDemo = (row) => {
+    setText(String((row.input || {}).text || ''));
+    setFillTip('示例原文已填入，点「抽取工单」即可自己跑一遍');
+  };
 
   const extract = useCallback(async () => {
     const t = text.trim();
     if (!t || loading) return;
-    setErr(''); setLoading(true); setResult(null);
+    setErr(''); setLoading(true); setResult(null); setDemo(null); setFillTip('');
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -82,6 +103,7 @@ export default function AgentOrder({ agent, onClose }) {
           </div>
 
           <div className="prd-form">
+            <ShowcasePicker agentId={agent?.id} active={demo?.label} onShow={showDemo} onUse={useDemo} />
             <div className="prd-field">
               <label>订单原文 <span className="prd-req">*</span></label>
               <textarea value={text} maxLength={12000} rows={7}
@@ -96,12 +118,14 @@ export default function AgentOrder({ agent, onClose }) {
               </button>
               <span className="agent-kb-tip">Ctrl + Enter 快速提交</span>
             </div>
+            {fillTip && <div style={{ margin: '8px 0', fontSize: 13, color: '#0369a1' }}>{fillTip}</div>}
             {loading && <div className="prd-loading"><span className="prd-spinner" /> AI 正在解析订单原文，请稍候…</div>}
             {err && <div className="prd-err">{err}</div>}
           </div>
 
           {result && (
             <div className="prd-result">
+              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${missing.length === 0 ? 'ok' : 'muted'}`}>
                   {missing.length === 0 ? '关键字段齐全' : `缺失字段 ${missing.length} 项`}
@@ -109,8 +133,9 @@ export default function AgentOrder({ agent, onClose }) {
                 <span className="prd-badge muted">
                   置信度：{typeof result.confidence === 'number' ? Math.round(result.confidence * 100) + '%' : '—'}
                 </span>
-                <button className="btn btn-sm btn-ghost" disabled={submitting}
-                        onClick={submitApproval}>
+                <button className="btn btn-sm btn-ghost" disabled={submitting || !!demo}
+                        onClick={submitApproval}
+                        title={demo ? '示例结果不能提交审批，请用自己的数据跑一遍' : undefined}>
                   {submitting ? '提交中…' : '提交人工审批'}
                 </button>
               </div>
@@ -118,7 +143,7 @@ export default function AgentOrder({ agent, onClose }) {
               {missing.length > 0 && (
                 <div className="prd-sources" style={{ color: '#b45309' }}>
                   ⚠️ 以下信息原文未提供，建议回询客户以免漏单：
-                  {missing.map((m, i) => <span key={i} className="prd-src">{m}</span>)}
+                  {missing.map((m, i) => <span key={i} className="prd-src">{FIELD_CN[m] || m}</span>)}
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px', margin: '12px 0' }}>

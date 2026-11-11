@@ -34,6 +34,7 @@ export default function AdminListing({ token }) {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
   const [note, setNote] = useState('');
+  const [sc, setSc] = useState(null);
   const timer = useRef(null);
 
   const auth = { headers: { Authorization: `Bearer ${token}` } };
@@ -86,9 +87,39 @@ export default function AdminListing({ token }) {
     try {
       const res = await fetch(`${API_BASE}/admin/listings/${id}`, auth);
       if (!res.ok) throw new Error(await readError(res));
-      setDetail(await res.json());
+      const row = await res.json();
+      setDetail(row);
+      loadShowcases(row.agent_id);
     } catch (e) {
       setErr(e?.message || '详情加载失败');
+    }
+  };
+
+  // A12：实测输出留档后，在这里挑一条定为体验弹窗里的对外示例
+  const loadShowcases = async (agentId) => {
+    if (!agentId) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/showcases?agent_id=${agentId}`, auth);
+      if (!res.ok) throw new Error(await readError(res));
+      setSc(await res.json());
+    } catch (e) {
+      setSc(null);
+    }
+  };
+
+  const pick = async (no, label) => {
+    setErr('');
+    try {
+      const res = await fetch(`${API_BASE}/admin/showcases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ agent_id: detail.agent_id, no, label }),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+      setMsg(`已将样例 ${no} 设为「${label}」示例`);
+      loadShowcases(detail.agent_id);
+    } catch (e) {
+      setErr(e?.message || '设置示例失败');
     }
   };
 
@@ -236,6 +267,37 @@ export default function AdminListing({ token }) {
                     </div>
                   ))}
                 </>
+              )}
+
+              <h4 style={{ margin: '14px 0 6px' }}>六、对外示例（客户在体验弹窗里先看到的）</h4>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                示例只能取自上面「样例实测」真跑出来的输出，不允许手写。每产品两格：「常规」放最顺的典型场景，
+                「缺字段」放能体现它把缺失标出来、不瞎猜的那条。
+              </div>
+              {(sc?.showcases || []).map(s => (
+                <div key={s.label} style={{ fontSize: 12, marginBottom: 4 }}>
+                  <b>{s.label}</b>：样例 {s.no}（置信度 {s.confidence != null ? Math.round(s.confidence * 100) + '%' : '—'}
+                  ，完整度 {s.coverage ? Math.round(s.coverage * 100) + '%' : '—'}，{s.latency_ms || 0} ms）
+                </div>
+              ))}
+              {!(sc?.showcases || []).length && (
+                <div className="muted" style={{ fontSize: 12 }}>两格都还没挑，体验弹窗暂时用出厂种子</div>
+              )}
+              {(sc?.candidates || []).map(cd => (
+                <div key={cd.no} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 10px', marginTop: 6, fontSize: 12 }}>
+                  <b>样例 {cd.no}</b>
+                  {cd.in_use && <span style={{ color: '#15803d' }}> · 已定为示例</span>}
+                  <div className="muted" style={{ wordBreak: 'break-all' }}>{JSON.stringify(cd.input).slice(0, 120)}</div>
+                  <div style={{ marginTop: 4 }}>
+                    {(sc?.labels || []).map(lb => (
+                      <button key={lb} className="btn btn-sm btn-ghost" style={{ marginRight: 6 }}
+                              onClick={() => pick(cd.no, lb)}>设为「{lb}」</button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!(sc?.candidates || []).length && (
+                <div className="muted" style={{ fontSize: 12 }}>这个产品还没有实测输出留档，先点「生成上架物料」跑一轮实测</div>
               )}
 
               <div className="modal-actions" style={{ marginTop: 16 }}>

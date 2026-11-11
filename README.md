@@ -177,8 +177,9 @@ curl http://127.0.0.1:8804/api/kb/stats   # 冒烟：HTTP 200
 | GET | `/api/kb/stats` `/api/kb/ask` `/api/kb/feedback` | 公开问答与反馈（限流） |
 | POST | `/api/kb/upload` | 公开文档上传（进待审） |
 | POST | `/api/agents/dispatch` `/api/agents/<id>/run` | 多智能体派发/直跑（限流） |
+| GET | `/api/agents/<id>/showcases` | 体验弹窗的对外示例（内置样例实测输出，A12） |
 | POST | `/api/prd-sessions` | 方案会话存档（自动，限流） |
 | GET | `/s/<id>` | 方案会话只读分享页 |
-| * | `/api/admin/*` | 管理域（Bearer token 鉴权）：kb 文档/采集/重建/WeKnora/遥测/评测、项目 CRUD、方案会话入库、预约列表、友链 |
+| * | `/api/admin/*` | 管理域（Bearer token 鉴权）：kb 文档/采集/重建/WeKnora/遥测/评测、项目 CRUD、方案会话入库、预约列表、友链、上架物料流水线与示例挑选 |
 
 完整行为以 `DEV_LOG.md` 各节与 `tests/` 断言为准。

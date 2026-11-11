@@ -149,7 +149,8 @@ def test_generate_prd():
     payload = {"company": "某某精密", "industry": "汽车零部件",
                "business": "主营发动机精密零部件，已有 MES。", "mode": "guide"}
 
-    hits = [{"text": "数字孪生赋能", "doc": {"title": "工控网", "url": "http://gk.com"}}]
+    hits = [{"text": "数字孪生赋能", "doc": {"title": "工控网", "url": "http://gk.com"}},
+            {"text": "数字孪生落地案例", "doc": {"title": "工控网", "url": "http://gk.com"}}]
     orig_chat = prd.chat
     try:
         prd.chat = _make_chat(return_text="# PRD 全文\n正文…")
@@ -157,8 +158,8 @@ def test_generate_prd():
         check("返回 prd 文本", res["prd"].startswith("# PRD"))
         check("mode 透传", res["mode"] == "guide")
         check("grounded=True（有命中）", res["grounded"] is True)
-        check("hits 计数=1", res["hits"] == 1)
-        check("sources 提取标题", len(res["sources"]) == 1 and res["sources"][0]["title"] == "工控网")
+        check("hits 计数=命中段数", res["hits"] == 2)
+        check("sources 同文档去重", len(res["sources"]) == 1 and res["sources"][0]["title"] == "工控网")
         check("带 model 字段", "model" in res)
 
         # 超时透传：generate_prd 应把更长的 config.PRD_TIMEOUT 传给 chat（而非默认 60s）
