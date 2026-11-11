@@ -1521,3 +1521,24 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 3. 硬闸门（体检/实测）与软阶段（文案/分镜）的失败语义必须分开：前者整单 failed + 后续 skipped，后者只记本阶段，否则一个文案抽风就把跑好的实测数据一起废掉。
 
 **部署与线上实测**（2026-11-11，本批与上一批 38597bb 一同上线）：ECS 恢复后按 SOP 备份（Dockerfile + data 整目录 tar）→ 补服务器 Dockerfile 第 9 行 COPY（source/web_capture.py、source/listing.py）→ 校验 source/requirements.txt 与本地字节一致（pypdf / beautifulsoup4 / openpyxl 齐备）→ 打包上传（md5 双端核对）→ `docker compose up -d --build`。线上验证：容器 healthy，`/api/agents` 返回五个 live；上架物料真跑 order-catcher 全流程（体检 3 项通过 → 样例 3/3 成功、成功率 100%、平均置信度 50%、完整度 67%、平均 2946ms → 文案六段 → 分镜 7 镜，全程 43 秒），审批通过后物料包 Markdown 导出正常（含体验地址、数据表、免责口径、审批留痕）；网页抓单登记 example.com 后真抓成功（engine=requests 兜底，镜像未装 Playwright），第二次抓取内容未变化按预期 skipped，测试账本已清理。另：运行时账本（订单捕获/邮箱口令/网页来源/审批/物料）补进 .gitignore，防客户原文入库。
+
+## 五十二、五份上架物料包出齐 + WeKnora 失联三周复盘（2026-11-11）
+
+**做了什么**：按上架流程把五个 live 产品逐个生成物料包（体验地址 + 实测数据表 + 商品文案 + 分镜脚本 + 审批留痕 + 口径免责），成品在 F:\deliverables\上架物料_20261111\。实测口径统一为「每产品 3 组内置样例真跑」，全部 100% 跑通，差异在耗时与置信度：
+
+| 产品 | 平均耗时 | 平均置信度 | 输出完整度 |
+| --- | --- | --- | --- |
+| 售前方案师 | 97.9 秒 | 30% | 83% |
+| 知识库问答 | 10.5 秒 | 70% | 100% |
+| 订单机器人 | 2.9 秒 | 50% | 67% |
+| 对账助手 | 10.6 秒 | 50% | 76% |
+| 场景分镜师 | 39.9 秒 | 80% | 100% |
+
+**顺手抓出一个三周事故**：知识库问答第一轮实测三条样例全红，硬闸门直接把整单打回 failed——报 WeKnora 不可达。查容器：weknora-app / weknora-docreader 已 Exited 三周（10-17 那次 ECS 失联起就没起来过），意味着这段时间公开问答一直在报错而没人知道。根因不是 compose 写错：weknora-lite/docker-compose.yml 里两个服务都写了 `restart: unless-stopped`，但**在跑策略之前创建的旧容器不会被 `up -d` 更新**（Start 只启动、不重建），inspect 出来仍是 `restart=no`。修复用 `docker update --restart unless-stopped` 直接改现有容器（不重建、无停机），已验证 healthy。
+
+**教训（比 DEV_LOG #42 那条更具体）**：
+1. 巡检要看**运行时的 restart 策略**（docker inspect），不能只看 compose 文件里写了什么——配置写了不等于生效；
+2. 硬闸门这次的价值体现出来了：物料流水线第一次真跑就把下游依赖掉线暴露出来，否则我们会拿着一份「知识库问答成功率 0%」的空白物料包上架，或者更糟——凭上次的旧数据上架；
+3. WeKnora 的可用性应进 A11 体检阶段（health 现在只查 agent.available()，available() 只看 API Key，不看引擎是否可达）。下一步可把「依赖服务可达」纳入 health 检查项。
+
+**待办**：知识库问答的物料包要在管理后台重点复核（数据是刚恢复后才跑出来的）；售前方案师 98 秒的耗时要在商品页写成「约 1.5 分钟出一份定制方案」，别让客户以为是秒出。
