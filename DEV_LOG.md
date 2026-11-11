@@ -1501,3 +1501,23 @@ Slice 5 离线 RAGAS-lite 手动评测 + 抽样裁判。
 **质量**：全量 17 文件 477 断言绿；前端构建通过。
 
 **坑**：网页抓单测试里注入 wc._data_dir 不够——账本经 order_mail.append_capture 写入，测试须同时把 om._data_dir 重定向到临时目录（依赖注入的模块边界在测试里的体现）。
+
+## 五十一、场景分镜师 + 上架物料流水线（A11，2026-11-11）
+
+**起因**：老板要上架淘宝/京东并做社媒推广，痛点是「客户咨询多，但缺实际案例、效果数据、操作/宣传视频」。对齐后的边界：工作流以**产品**为单位、效果数据靠**自动跑内置样例统计**、视频环节**只出分镜脚本**（录制人工）、成品**只在管理后台出包**。
+
+**场景分镜师（第五个 live 智能体）**：agents/scene_director.py——品牌/行业一句话 → LLM 强制 JSON 分镜脚本（4-8 场景、按镜头飞行叙事顺序、每场景附等距静帧绘制提示词 + 无切剪镜头衔接说明）；超 8 个截断、不足 4 个置信度降 0.5；前端 AgentScenes.jsx（ui=scenes 第五路分流）。24 断言，另把 4 个旧测试里的「四个 live」断言统一改为五个。
+
+**上架物料流水线 listing.py**（Blueprint+注入，四阶段 durable workflow）：
+1. health 体检——产品已注册 / 引擎 available() / 样例集齐备；
+2. metrics 实测——每产品内置 3 组真实制造场景样例，逐个真跑 agent.run()，统计成功率、平均置信度、输出完整度（非空字段占比）、平均耗时，样例明细只留一行摘要；
+3. copy 文案——把实测数字喂给 LLM 出商品标题/一句话卖点/核心功能/操作说明/应用场景/客户画像，提示词明写「卖点必须与实测数据一致，不许编造」；
+4. storyboard 分镜——直接复用场景分镜师智能体出宣传视频镜头脚本。
+后台 daemon 线程逐阶段写回 data/listings.json（留 100 条），体检或实测不过即整单 failed 且后续阶段标 skipped；文案/分镜失败只记本阶段，不影响整单完成。人工闸门 approve/reject（驳回必填理由、已决 409 不可重复），通过后 GET /api/admin/listings/<id>/export 下载物料包 Markdown（体验地址 + 数据表 + 文案 + 分镜 + 审批留痕 + 「样例实测非客户产线数据」口径免责）。管理后台新「上架物料」页签 AdminListing.jsx：选产品→生成（running 时 1.5 秒自动轮询进度）→详情四段展示→审批→下载 .md。46 断言，全量 19 文件 567 绿（部署前复跑，0 失败）。
+
+**坑**：
+1. 打桩要打在**模块属性**上（sd.chat / oc.chat / ls.chat），打在实例属性 ag.chat 上不生效——agent 内部调用的是模块顶层 import 进来的名字；
+2. 打桩后耗时统计必然为 0，断言别写「正数」，写「整数且 ≥0」；
+3. 硬闸门（体检/实测）与软阶段（文案/分镜）的失败语义必须分开：前者整单 failed + 后续 skipped，后者只记本阶段，否则一个文案抽风就把跑好的实测数据一起废掉。
+
+**部署与线上实测**（2026-11-11，本批与上一批 38597bb 一同上线）：ECS 恢复后按 SOP 备份（Dockerfile + data 整目录 tar）→ 补服务器 Dockerfile 第 9 行 COPY（source/web_capture.py、source/listing.py）→ 校验 source/requirements.txt 与本地字节一致（pypdf / beautifulsoup4 / openpyxl 齐备）→ 打包上传（md5 双端核对）→ `docker compose up -d --build`。线上验证：容器 healthy，`/api/agents` 返回五个 live；上架物料真跑 order-catcher 全流程（体检 3 项通过 → 样例 3/3 成功、成功率 100%、平均置信度 50%、完整度 67%、平均 2946ms → 文案六段 → 分镜 7 镜，全程 43 秒），审批通过后物料包 Markdown 导出正常（含体验地址、数据表、免责口径、审批留痕）；网页抓单登记 example.com 后真抓成功（engine=requests 兜底，镜像未装 Playwright），第二次抓取内容未变化按预期 skipped，测试账本已清理。另：运行时账本（订单捕获/邮箱口令/网页来源/审批/物料）补进 .gitignore，防客户原文入库。

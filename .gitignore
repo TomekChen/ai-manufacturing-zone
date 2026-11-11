@@ -21,6 +21,13 @@ data/kb_eval_results.json
 data/config.json
 data/demo_bookings.json
 data/prd_sessions.json
+# 订单/审批/物料账本含客户原文，永不入库
+data/order_captures.json
+data/order_mail.json
+data/order_mail_status.json
+data/web_sources.json
+data/approvals.json
+data/listings.json
 *.log
 # 编辑器/系统
 .vscode/

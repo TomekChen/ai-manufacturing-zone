@@ -20,6 +20,7 @@ import AdminSessions from './AdminSessions';
 import AdminOrderMail from './AdminOrderMail';
 import AdminApproval from './AdminApproval';
 import AdminWebCapture from './AdminWebCapture';
+import AdminListing from './AdminListing';
 
 import { API_BASE, readError, apiGet, apiPost, apiDelete, apiUpload } from './api';
 
@@ -386,6 +387,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           <button className={activeTab === 'ordermail' ? 'active' : ''} onClick={() => setActiveTab('ordermail')}>订单捕获</button>
           <button className={activeTab === 'approval' ? 'active' : ''} onClick={() => setActiveTab('approval')}>审批留痕</button>
           <button className={activeTab === 'webcapture' ? 'active' : ''} onClick={() => setActiveTab('webcapture')}>网页抓单</button>
+          <button className={activeTab === 'listing' ? 'active' : ''} onClick={() => setActiveTab('listing')}>上架物料</button>
           <button className={activeTab === 'config' ? 'active' : ''} onClick={() => setActiveTab('config')}>外观配置</button>
         </div>
         <div className="admin-body">
@@ -435,6 +437,7 @@ function AdminPanel({ config, projects, token, onClose, onChange, onAddProject, 
           {activeTab === 'ordermail' && <AdminOrderMail token={token} />}
           {activeTab === 'approval' && <AdminApproval token={token} />}
           {activeTab === 'webcapture' && <AdminWebCapture token={token} />}
+          {activeTab === 'listing' && <AdminListing token={token} />}
           {activeTab === 'config' && (
             <div className="admin-form">
               <label>站点标题</label>
