@@ -56,3 +56,4 @@ from . import prd_advisor  # noqa: E402,F401
 from . import kb_assistant  # noqa: E402,F401
 from . import order_catcher  # noqa: E402,F401
 from . import reconciler  # noqa: E402,F401
+from . import scene_director  # noqa: E402,F401

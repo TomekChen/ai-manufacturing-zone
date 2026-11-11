@@ -89,9 +89,9 @@ def test_registry():
     meta = a.meta()
     check("meta.ui=recon", meta.get("ui") == "recon")
     check("endpoint 指向通用 run", meta["endpoint"] == "/api/agents/reconciler/run")
-    check("公开注册表顺序：prd → kb → order → recon",
+    check("公开注册表顺序：prd → kb → order → recon → scene",
           [x["id"] for x in agents.list_agents(only_live=True)] ==
-          ["prd-advisor", "kb-assistant", "order-catcher", "reconciler"])
+          ["prd-advisor", "kb-assistant", "order-catcher", "reconciler", "scene-director"])
     check("route_task：对账任务命中 reconciler", route_task("月末银行流水要和台账对账") is a)
     check("route_task：核销命中", route_task("这几笔货款还没核销") is a)
     check("route_task：订单任务仍归 order-catcher",
