@@ -1,13 +1,15 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { MarkdownView } from './AdminPRD';
 import { readError } from './api';
-import ShowcasePicker, { DemoNote } from './Showcase';
+import ShowcasePicker, { DemoSlot } from './Showcase';
 
 
 /* ===== 售前方案师 · 公开在线体验弹窗（A1 曳光弹，A2 接入注册表） =====
    与后台版 AdminPRD 同一引擎；端点取自智能体注册表（agent.endpoint），
    无需管理员登录，按 IP 限流（每 IP 每小时 5 次）。说明文字 ≥14px，输入区加大。
-   A12：「先看示例」用同一套 MarkdownView 渲染整份方案，默认只露目录 + 前两节。 */
+   A12：「先看示例」用同一套 MarkdownView 渲染整份方案，默认只露目录 + 前两节。
+   A13：示例改在独立浮层里看（点「看示例」当场出结果，不用往下滚）；
+        渲染 JSX 只有一份，由 Showcase 的 DemoSlot 决定放浮层还是放原位。 */
 
 const MODE_LABEL = { guide: '引导', normalize: '规范化' };
 
@@ -45,12 +47,9 @@ export default function AgentPRD({ agent, onClose }) {
   // A2：端点来自注册表，而非硬编码；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/prd-advisor/run';
 
-  const showDemo = (row) => {
-    setErr(''); setFillTip(''); setExpandDemo(false); setDemo(row);
-    // 切到示例快照：本次会话的版本条/存档标记先收起，避免和示例混在一起
-    setHistory(null); setSaved(null); setViewV(0);
-    setResult({ ...(row.output || {}), confidence: row.confidence });
-  };
+  // A12/A13 示例：快照只喂给下面的方案渲染，不覆盖客户自己跑过的结果；
+  // 会话的版本条/存档标记保留，靠 !demo 判断在示例浮层里不显示，关掉示例还能看到自己的。
+  const showDemo = (row) => { setErr(''); setFillTip(''); setExpandDemo(false); setDemo(row); };
   const useDemo = (row) => {
     const p = row.input || {};
     setCompany(String(p.company || ''));
@@ -145,6 +144,9 @@ export default function AgentPRD({ agent, onClose }) {
 
   const canSubmit = company.trim() && business.trim().length >= 5 && !loading;
 
+  // 示例态读快照、非示例态读客户自己跑过的结果；渲染 JSX 只有一份
+  const view = (demo ? demo.output : result) || {};
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal modal-xl agent-prd-modal" onClick={(e) => e.stopPropagation()}>
@@ -230,10 +232,12 @@ export default function AgentPRD({ agent, onClose }) {
             {err && <div className="prd-err">{err}</div>}
           </div>
 
-          {result && (
+          {(demo || result) && (
+            <DemoSlot demo={demo} title={agent?.name || '售前方案师'}
+                      onClose={() => setDemo(null)}
+                      onUse={() => { useDemo(demo); setDemo(null); }}>
             <div className="prd-result">
-              {demo && <DemoNote />}
-              {history && history.versions && history.versions.length > 0 && (
+              {!demo && history && history.versions && history.versions.length > 0 && (
                 <div className="prd-version-bar">
                   <span className="prd-version-label">历史版本</span>
                   {history.versions.map(v => (
@@ -250,21 +254,21 @@ export default function AgentPRD({ agent, onClose }) {
                 </div>
               )}
               <div className="prd-result-bar">
-                <span className={`prd-badge ${result.grounded ? 'ok' : 'muted'}`}>
-                  {result.grounded ? `已接地知识库 ${result.hits} 条` : '未接地（知识库无相关命中）'}
+                <span className={`prd-badge ${view.grounded ? 'ok' : 'muted'}`}>
+                  {view.grounded ? `已接地知识库 ${view.hits} 条` : '未接地（知识库无相关命中）'}
                 </span>
-                <span className="prd-badge muted">模式：{MODE_LABEL[result.mode] || result.mode || '—'}</span>
-                <span className="prd-badge muted">模型：{result.model}</span>
-                {saved && (
+                <span className="prd-badge muted">模式：{MODE_LABEL[view.mode] || view.mode || '—'}</span>
+                <span className="prd-badge muted">模型：{view.model}</span>
+                {!demo && saved && (
                   <span className="prd-badge ok" title="本次会话已存档，旧版本不会被覆盖">
                     已存档 v{saved.version}
                   </span>
                 )}
               </div>
-              {result.sources && result.sources.length > 0 && (
+              {view.sources && view.sources.length > 0 && (
                 <div className="prd-sources">
                   参考来源：
-                  {result.sources.map((s, i) => (
+                  {view.sources.map((s, i) => (
                     <span key={i} className="prd-src">
                       {s.url ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a> : s.title}
                     </span>
@@ -275,7 +279,7 @@ export default function AgentPRD({ agent, onClose }) {
                 if (!demo || expandDemo) {
                   return (
                     <>
-                      <MarkdownView text={result.prd} />
+                      <MarkdownView text={view.prd} />
                       {demo && (
                         <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
                                 onClick={() => setExpandDemo(false)}>收起方案</button>
@@ -283,7 +287,7 @@ export default function AgentPRD({ agent, onClose }) {
                     </>
                   );
                 }
-                const { head, toc, folded } = prdCut(result.prd);
+                const { head, toc, folded } = prdCut(view.prd);
                 return (
                   <>
                     {toc.length > 0 && (
@@ -295,13 +299,14 @@ export default function AgentPRD({ agent, onClose }) {
                     {folded && (
                       <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
                               onClick={() => setExpandDemo(true)}>
-                        展开全文（约 {(result.prd || '').length} 字）
+                        展开全文（约 {(view.prd || '').length} 字）
                       </button>
                     )}
                   </>
                 );
               })()}
             </div>
+            </DemoSlot>
           )}
         </div>
       </div>

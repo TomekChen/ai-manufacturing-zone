@@ -1,13 +1,15 @@
 import React, { useState, useCallback } from 'react';
 import { readError } from './api';
-import ShowcasePicker, { DemoNote } from './Showcase';
+import ShowcasePicker, { DemoSlot } from './Showcase';
 
 /* ===== 对账助手 · 公开在线体验弹窗（A9 第四个上线智能体） =====
    粘贴银行流水（必填）+ 应收应付台账（可选）→ 后端逐笔比对：
    完全匹配 / 疑似匹配（附核对要点）/ 未达账项 / 建议分录。
    ui=recon 的智能体走本弹窗（main.jsx 按 agent.ui 分流）；
    样式复用 prd-* 体系，不新增 CSS。
-   A12：「先看示例」的示例结果复用本弹窗自己的三堆分组渲染。 */
+   A12：「先看示例」的示例结果复用本弹窗自己的三组差异渲染。
+   A13：示例改在独立浮层里看（点「看示例」当场出结果，不用往下滚）；
+        渲染 JSX 只有一份，由 Showcase 的 DemoSlot 决定放浮层还是放原位。 */
 
 const Section = ({ title, children }) => (
   <div className="prd-field">
@@ -51,10 +53,8 @@ export default function AgentRecon({ agent, onClose }) {
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/reconciler/run';
 
-  const showDemo = (row) => {
-    setErr(''); setFillTip(''); setDemo(row);
-    setResult({ ...(row.output || {}), confidence: row.confidence });
-  };
+  // A12/A13 示例：快照只喂给下面的三组差异渲染，不覆盖客户自己跑过的结果（关掉示例还能看到自己的）
+  const showDemo = (row) => { setErr(''); setFillTip(''); setDemo(row); };
   const useDemo = (row) => {
     const p = row.input || {};
     setStatement(String(p.statement || ''));
@@ -128,7 +128,8 @@ export default function AgentRecon({ agent, onClose }) {
     }
   };
 
-  const r = result || {};
+  const r = (demo ? demo.output : result) || {};
+  const confidence = demo ? demo.confidence : result?.confidence;
   const matched = r.matched || [];
   const suspected = r.suspected || [];
   const unmatchedBank = r.unmatched_bank || [];
@@ -136,8 +137,8 @@ export default function AgentRecon({ agent, onClose }) {
   const suggestions = r.suggestions || [];
   const summary = r.summary || {};
 
-  const confidenceBadge = typeof result?.confidence === 'number'
-    ? Math.round(result.confidence * 100) + '%'
+  const confidenceBadge = typeof confidence === 'number'
+    ? Math.round(confidence * 100) + '%'
     : '—';
 
   return (
@@ -194,9 +195,11 @@ export default function AgentRecon({ agent, onClose }) {
             {err && <div className="prd-err">{err}</div>}
           </div>
 
-          {result && (
+          {(demo || result) && (
+            <DemoSlot demo={demo} title={agent?.name || '对账助手'}
+                      onClose={() => setDemo(null)}
+                      onUse={() => { useDemo(demo); setDemo(null); }}>
             <div className="prd-result">
-              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${unmatchedBank.length + unmatchedLedger.length === 0 ? 'ok' : 'muted'}`}>
                   {unmatchedBank.length + unmatchedLedger.length === 0
@@ -263,6 +266,7 @@ export default function AgentRecon({ agent, onClose }) {
                 </Section>
               )}
             </div>
+            </DemoSlot>
           )}
         </div>
       </div>

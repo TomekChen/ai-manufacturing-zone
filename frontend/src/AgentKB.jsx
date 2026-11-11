@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import renderMarkdown from './markdown';
 import { readError } from './api';
-import ShowcasePicker, { DemoNote } from './Showcase';
+import ShowcasePicker, { DemoSlot } from './Showcase';
 
 /* ===== 知识管家 · 公开在线体验弹窗（A3 第二个上线智能体） =====
    经注册表 endpoint 调用，与首页「知识问答」区同一条后端链路。
@@ -26,9 +26,9 @@ export default function AgentKB({ agent, onClose }) {
   // 端点来自注册表；老 agent 对象缺 endpoint 时回退
   const endpoint = (agent && agent.endpoint) || '/api/agents/kb-assistant/run';
 
+  // A12/A13 示例：快照只喂给下面的答案渲染，不覆盖客户自己问出来的结果
   const showDemo = (row) => {
     setErr(''); setFillTip(''); setDemo(row);
-    setResult({ ...(row.output || {}), confidence: row.confidence });
   };
   const useDemo = (row) => {
     setQuestion(String((row.input || {}).question || ''));
@@ -58,7 +58,9 @@ export default function AgentKB({ agent, onClose }) {
     }
   }, [question, loading, endpoint]);
 
-  const sources = (result?.sources) || [];
+  const view = (demo ? demo.output : result) || {};
+  const confidence = demo ? demo.confidence : result?.confidence;
+  const sources = view.sources || [];
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -104,15 +106,17 @@ export default function AgentKB({ agent, onClose }) {
             {err && <div className="prd-err">{err}</div>}
           </div>
 
-          {result && (
+          {(demo || result) && (
+            <DemoSlot demo={demo} title={agent?.name || '知识管家'}
+                      onClose={() => setDemo(null)}
+                      onUse={() => { useDemo(demo); setDemo(null); }}>
             <div className="prd-result">
-              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${sources.length > 0 ? 'ok' : 'muted'}`}>
                   {sources.length > 0 ? `引用知识库 ${sources.length} 条` : '未命中知识库（仅供参考）'}
                 </span>
                 <span className="prd-badge muted">
-                  置信度：{((c) => (typeof c === 'number' ? Math.round(c * 100) + '%' : '—'))(result.confidence)}
+                  置信度：{((c) => (typeof c === 'number' ? Math.round(c * 100) + '%' : '—'))(confidence)}
                 </span>
               </div>
               {sources.length > 0 && (
@@ -129,8 +133,9 @@ export default function AgentKB({ agent, onClose }) {
                 </div>
               )}
               <div className="agent-kb-answer qa-answer-content"
-                   dangerouslySetInnerHTML={{ __html: renderMarkdown(result.answer || '') }} />
+                   dangerouslySetInnerHTML={{ __html: renderMarkdown(view.answer || '') }} />
             </div>
+            </DemoSlot>
           )}
         </div>
       </div>

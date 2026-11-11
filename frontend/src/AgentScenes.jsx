@@ -1,12 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { readError } from './api';
-import ShowcasePicker, { DemoNote } from './Showcase';
+import ShowcasePicker, { DemoSlot } from './Showcase';
 
 /* ===== 场景分镜师 · 公开在线体验弹窗（第五个上线智能体） =====
    品牌/行业输入 → 分镜脚本（场景顺序/内容/静帧提示词/镜头衔接）。
    ui=scenes 的智能体走本弹窗（main.jsx 按 agent.ui 分流）；
    样式复用 prd-* 体系，不新增 CSS。
-   A12：输入框上方「先看示例」，示例脚本复用本弹窗自己的镜头列表渲染。 */
+   A12：输入框上方「先看示例」，示例脚本复用本弹窗自己的镜头列表渲染。
+   A13：示例改在独立浮层里看（点「看示例」当场出结果，不用往下滚）；
+        渲染 JSX 只有一份，由 Showcase 的 DemoSlot 决定放浮层还是放原位。 */
 export default function AgentScenes({ agent, onClose }) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,10 +19,8 @@ export default function AgentScenes({ agent, onClose }) {
 
   const endpoint = (agent && agent.endpoint) || '/api/agents/scene-director/run';
 
-  const showDemo = (row) => {
-    setErr(''); setFillTip(''); setDemo(row);
-    setResult({ ...(row.output || {}), confidence: row.confidence });
-  };
+  // A12/A13 示例：快照只喂给下面的镜头列表渲染，不覆盖客户自己跑过的结果
+  const showDemo = (row) => { setErr(''); setFillTip(''); setDemo(row); };
   const useDemo = (row) => {
     setText(String((row.input || {}).text || ''));
     setFillTip('示例原文已填入，点「生成分镜脚本」即可自己跑一遍');
@@ -47,7 +47,8 @@ export default function AgentScenes({ agent, onClose }) {
     }
   }, [text, loading, endpoint]);
 
-  const plan = result || {};
+  const plan = (demo ? demo.output : result) || {};
+  const confidence = demo ? demo.confidence : result?.confidence;
   const scenes = Array.isArray(plan.scenes) ? plan.scenes : [];
 
   return (
@@ -85,15 +86,17 @@ export default function AgentScenes({ agent, onClose }) {
             {err && <div className="prd-err">{err}</div>}
           </div>
 
-          {result && (
+          {(demo || result) && (
+            <DemoSlot demo={demo} title={agent?.name || '场景分镜师'}
+                      onClose={() => setDemo(null)}
+                      onUse={() => { useDemo(demo); setDemo(null); }}>
             <div className="prd-result">
-              {demo && <DemoNote />}
               <div className="prd-result-bar">
                 <span className={`prd-badge ${scenes.length >= 4 && scenes.length <= 8 ? 'ok' : 'muted'}`}>
                   {scenes.length} 个场景
                 </span>
                 <span className="prd-badge muted">
-                  置信度：{typeof result.confidence === 'number' ? Math.round(result.confidence * 100) + '%' : '—'}
+                  置信度：{typeof confidence === 'number' ? Math.round(confidence * 100) + '%' : '—'}
                 </span>
               </div>
               {plan.brand && (
@@ -124,6 +127,7 @@ export default function AgentScenes({ agent, onClose }) {
                 ))}
               </div>
             </div>
+            </DemoSlot>
           )}
         </div>
       </div>
